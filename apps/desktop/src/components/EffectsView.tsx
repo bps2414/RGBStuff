@@ -1,145 +1,77 @@
-import * as Slider from "@radix-ui/react-slider";
-import { type EffectKind } from "../i18n";
-import { hexToRgb, rgbToHex } from "../lib/tauri";
+import { EFFECT_META, EFFECT_ORDER, effectBackground } from "../lib/visuals";
 import { useAppStore } from "../store/useAppStore";
-
-const EFFECT_ORDER: Array<{ kind: EffectKind; isStatic: boolean }> = [
-  { kind: "solid", isStatic: true },
-  { kind: "gradient", isStatic: true },
-  { kind: "rainbow_wave", isStatic: false },
-  { kind: "breathing", isStatic: false },
-  { kind: "dual_pulse", isStatic: false },
-  { kind: "starlight", isStatic: false },
-  { kind: "ambilight", isStatic: false },
-  { kind: "audio_spectrum", isStatic: false },
-  { kind: "off", isStatic: true },
-];
+import { EffectControls, SceneGrid, useActiveProfile } from "./EffectWidgets";
+import { Panel } from "./ui";
 
 export function EffectsView() {
   const { state, t, updateEffect } = useAppStore();
-  if (!state) return null;
-
-  const activeProfile =
-    state.config.profiles.find((p) => p.id === state.config.active_profile_id) ??
-    state.config.profiles[0];
-  if (!activeProfile) return null;
+  const profile = useActiveProfile();
+  if (!state || !profile) return null;
+  const on = state.config.power_on;
+  const profileName = t.presets[profile.id] ?? profile.name;
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto pr-1">
-      <div className="flex items-end justify-between">
-        <div>
-          <h2 className="text-base font-semibold text-zinc-100">{t.effects.title}</h2>
-          <p className="text-xs text-zinc-400">{t.effects.subtitle}</p>
-        </div>
+    <div className="fade-in flex h-full flex-col gap-4 overflow-y-auto pr-1">
+      <div>
+        <h2 className="font-display text-lg font-semibold text-zinc-50">{t.effects.title}</h2>
+        <p className="text-xs text-zinc-400">{t.effects.subtitle}</p>
       </div>
 
-      {/* Effect Grid */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {EFFECT_ORDER.map(({ kind, isStatic }) => {
-          const active = activeProfile.effect.kind === kind;
-          const copy = t.effects.items[kind];
-          return (
-            <button
-              key={kind}
-              type="button"
-              onClick={() => updateEffect({ ...activeProfile.effect, kind })}
-              className={`studio-card flex flex-col justify-between rounded-2xl p-4 text-left ${
-                active ? "border-zinc-100/60 bg-white/10" : ""
-              }`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-sm font-medium text-zinc-100">{copy.name}</span>
-                <span
-                  className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium ${
-                    isStatic
-                      ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                      : "border border-sky-400/30 bg-sky-400/10 text-sky-300"
-                  }`}
+      <Panel title={t.effects.scenesTitle} desc={t.effects.scenesDesc}>
+        <SceneGrid />
+      </Panel>
+
+      <div className="grid min-h-0 grid-cols-1 gap-4 xl:grid-cols-[1fr_340px]">
+        <Panel title={t.effects.allEffects}>
+          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3">
+            {EFFECT_ORDER.map((kind) => {
+              const active = on && profile.effect.kind === kind;
+              const isStatic = EFFECT_META[kind].isStatic;
+              const copy = t.effects.items[kind];
+              return (
+                <button
+                  key={kind}
+                  type="button"
+                  data-active={active}
+                  onClick={() => updateEffect({ ...profile.effect, kind })}
+                  title={copy.description}
+                  className="studio-card studio-btn flex flex-col overflow-hidden rounded-xl text-left"
                 >
-                  {isStatic ? t.engine.zeroCpuBadge : t.engine.liveCanvasBadge}
-                </span>
-              </div>
-              <p className="mt-2 text-xs leading-relaxed text-zinc-400">{copy.description}</p>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Parameters */}
-      <div className="studio-panel grid grid-cols-1 gap-4 rounded-2xl p-4 md:grid-cols-4">
-        <label className="flex flex-col gap-1.5 text-xs text-zinc-300">
-          <span>{t.effects.primaryColor}</span>
-          <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
-            <input
-              type="color"
-              value={rgbToHex(activeProfile.effect.primary_color)}
-              onChange={(e) =>
-                updateEffect({
-                  ...activeProfile.effect,
-                  primary_color: hexToRgb(e.target.value),
-                })
-              }
-              className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
-            />
-            <span className="font-mono text-xs">{rgbToHex(activeProfile.effect.primary_color)}</span>
+                  <span
+                    className="fx-thumb h-12 w-full"
+                    data-live={!isStatic}
+                    style={{ background: effectBackground({ ...profile.effect, kind }) }}
+                  />
+                  <span className="flex items-center justify-between gap-2 px-3 py-2">
+                    <span className="truncate text-xs font-medium text-zinc-100">{copy.name}</span>
+                    <span
+                      className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+                        isStatic ? "bg-emerald-500/12 text-emerald-300" : "bg-white/8 text-zinc-300"
+                      }`}
+                    >
+                      {isStatic ? t.engine.zeroCpuBadge : t.engine.liveCanvasBadge}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
-        </label>
+        </Panel>
 
-        <label className="flex flex-col gap-1.5 text-xs text-zinc-300">
-          <span>{t.effects.secondaryColor}</span>
-          <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
-            <input
-              type="color"
-              value={rgbToHex(activeProfile.effect.secondary_color)}
-              onChange={(e) =>
-                updateEffect({
-                  ...activeProfile.effect,
-                  secondary_color: hexToRgb(e.target.value),
-                })
-              }
-              className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
-            />
-            <span className="font-mono text-xs">{rgbToHex(activeProfile.effect.secondary_color)}</span>
+        <Panel
+          title={t.effects.parameters}
+          desc={
+            <>
+              {t.effects.editing}: <span className="font-medium text-zinc-200">{profileName}</span>
+            </>
+          }
+        >
+          <div className="mb-4 rounded-xl border border-white/8 bg-black/25 p-3">
+            <div className="text-sm font-medium text-zinc-100">{t.effects.items[profile.effect.kind].name}</div>
+            <p className="mt-1 text-xs leading-relaxed text-zinc-400">{t.effects.items[profile.effect.kind].description}</p>
           </div>
-        </label>
-
-        <div className="flex flex-col justify-center">
-          <div className="mb-1.5 flex justify-between text-xs text-zinc-300">
-            <span>{t.effects.angle}</span>
-            <span className="tabular-nums">{Math.round(activeProfile.effect.angle_deg)}°</span>
-          </div>
-          <Slider.Root
-            className="relative flex h-5 w-full items-center"
-            value={[activeProfile.effect.angle_deg]}
-            min={0}
-            max={360}
-            onValueChange={([v]) => updateEffect({ ...activeProfile.effect, angle_deg: v })}
-          >
-            <Slider.Track className="relative h-1.5 w-full grow rounded-full bg-white/10">
-              <Slider.Range className="absolute h-full rounded-full bg-zinc-100" />
-            </Slider.Track>
-            <Slider.Thumb className="block h-3.5 w-3.5 rounded-full bg-zinc-100" />
-          </Slider.Root>
-        </div>
-
-        <div className="flex flex-col justify-center">
-          <div className="mb-1.5 flex justify-between text-xs text-zinc-300">
-            <span>{t.effects.scale}</span>
-            <span className="tabular-nums">{activeProfile.effect.scale}%</span>
-          </div>
-          <Slider.Root
-            className="relative flex h-5 w-full items-center"
-            value={[activeProfile.effect.scale]}
-            min={20}
-            max={200}
-            onValueChange={([v]) => updateEffect({ ...activeProfile.effect, scale: v })}
-          >
-            <Slider.Track className="relative h-1.5 w-full grow rounded-full bg-white/10">
-              <Slider.Range className="absolute h-full rounded-full bg-zinc-100" />
-            </Slider.Track>
-            <Slider.Thumb className="block h-3.5 w-3.5 rounded-full bg-zinc-100" />
-          </Slider.Root>
-        </div>
+          <EffectControls columns={1} />
+        </Panel>
       </div>
     </div>
   );

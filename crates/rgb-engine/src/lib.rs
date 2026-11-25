@@ -4,7 +4,7 @@ pub mod engine;
 pub mod pacer;
 
 pub use canvas::Canvas2D;
-pub use effects::{EffectFrameInput, render_effect};
+pub use effects::{EffectFrameInput, EffectState, render_effect};
 pub use engine::{EngineStatus, LightingEngine};
 pub use pacer::{BusFramePacer, DirtyFrameTracker};
 
@@ -74,6 +74,7 @@ mod tests {
             height: 0.5,
             rotation_deg: 0.0,
             led_count: 4,
+            brightness: 100,
         };
         let pts = vec![LedPoint { x: 0.5, y: 0.5 }; 4];
 

@@ -1551,7 +1551,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "hid-probe"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "hidapi",
  "libloading 0.8.9",
@@ -3306,7 +3306,7 @@ dependencies = [
 
 [[package]]
 name = "rgb-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "directories",
  "serde",
@@ -3316,7 +3316,7 @@ dependencies = [
 
 [[package]]
 name = "rgb-drivers"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "hidapi",
  "libloading 0.8.9",
@@ -3326,7 +3326,7 @@ dependencies = [
 
 [[package]]
 name = "rgb-engine"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rgb-core",
  "serde",
@@ -3344,7 +3344,7 @@ dependencies = [
 
 [[package]]
 name = "rgbstuff-desktop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rgb-automation",
  "rgb-capture",

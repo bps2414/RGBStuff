@@ -1,5 +1,5 @@
 use crate::canvas::Canvas2D;
-use crate::effects::{EffectFrameInput, render_effect};
+use crate::effects::{EffectFrameInput, EffectState, render_effect};
 use crate::pacer::{BusFramePacer, DirtyFrameTracker};
 use rgb_core::{AppConfig, DevicePlacement, EffectKind, EffectParams, LedPoint, Rgb};
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,7 @@ pub struct LightingEngine {
     pub dirty: DirtyFrameTracker,
     start_instant: Instant,
     static_applied: bool,
+    effect_state: EffectState,
 }
 
 impl Default for LightingEngine {
@@ -39,12 +40,18 @@ impl LightingEngine {
             dirty: DirtyFrameTracker::new(),
             start_instant: Instant::now(),
             static_applied: false,
+            effect_state: EffectState::new(),
         }
     }
 
     pub fn mark_needs_apply(&mut self) {
         self.static_applied = false;
         self.dirty.invalidate_all();
+    }
+
+    /// Keeps a static frame pending (e.g. a bus was still inside its pacing window).
+    pub fn defer_static_apply(&mut self) {
+        self.static_applied = false;
     }
 
     pub fn status_for(config: &AppConfig) -> EngineStatus {
@@ -103,7 +110,7 @@ impl LightingEngine {
             screen_frame,
             audio_bands,
         };
-        render_effect(&mut self.canvas, &params, &input);
+        render_effect(&mut self.canvas, &params, &input, &mut self.effect_state);
 
         if params.kind.is_static() || !config.power_on {
             self.static_applied = true;
@@ -123,8 +130,10 @@ impl LightingEngine {
         if !force && !self.pacer.should_send(&placement.device_id, now) {
             return None;
         }
-        let brightness = Self::effective_brightness(config);
-        let colors = self.canvas.sample_device(placement, local_points, brightness);
+        let gain = Self::effective_brightness(config) as f32 / 100.0
+            * placement.brightness.min(200) as f32
+            / 100.0;
+        let colors = self.canvas.sample_device(placement, local_points, gain);
         if !force && !self.dirty.is_dirty(&placement.device_id, &colors) {
             return None;
         }

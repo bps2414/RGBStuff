@@ -84,12 +84,12 @@ impl Canvas2D {
         &self,
         placement: &DevicePlacement,
         local_points: &[LedPoint],
-        brightness: u8,
+        gain: f32,
     ) -> Vec<Rgb> {
         placement
             .sample_points(local_points)
             .into_iter()
-            .map(|pt| self.sample_bilinear(pt.x, pt.y).scale_brightness(brightness))
+            .map(|pt| self.sample_bilinear(pt.x, pt.y).apply_gain(gain))
             .collect()
     }
 }

@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { EffectKind, Locale } from "../i18n";
 
 export interface RgbColor {
@@ -31,6 +32,8 @@ export interface DevicePlacement {
   height: number;
   rotation_deg: number;
   led_count: number;
+  /** Per-device gain 0..=200 (above 100 = hue-preserving boost). */
+  brightness: number;
 }
 
 export interface AppProfileRule {
@@ -73,6 +76,13 @@ export interface RunningAppInfo {
   title: string;
 }
 
+export type CloseAction = "tray" | "quit";
+
+export interface UiPrefs {
+  close_action: CloseAction;
+  tray_hint_shown: boolean;
+}
+
 export interface AppConfig {
   schema_version: number;
   locale: Locale;
@@ -84,6 +94,7 @@ export interface AppConfig {
   placements: DevicePlacement[];
   automation: AutomationConfig;
   imported_hub_presets: ImportedHubItem[];
+  ui: UiPrefs;
 }
 
 export type EngineStatus =
@@ -126,6 +137,9 @@ export interface BootstrapState {
   canvas_height: number;
   canvas_pixels: number[];
   active_rule_app: string | null;
+  night_mode_active: boolean;
+  output_brightness: number;
+  app_version: string;
 }
 
 export interface HubImportResponse {
@@ -143,17 +157,17 @@ export const isTauriRuntime = (): boolean => Boolean(window.__TAURI_INTERNALS__)
 
 const DEV_PREVIEW_STATE: BootstrapState = {
   config: {
-    schema_version: 1,
+    schema_version: 2,
     locale: "pt-BR",
     power_on: true,
-    global_brightness: 80,
+    global_brightness: 100,
     active_profile_id: "work",
     aura_argb_led_counts: [16, 16],
     profiles: [
       {
         id: "work",
         name: "Work",
-        brightness: 70,
+        brightness: 100,
         effect: {
           kind: "gradient",
           primary_color: { r: 224, g: 242, b: 254 },
@@ -166,7 +180,7 @@ const DEV_PREVIEW_STATE: BootstrapState = {
       {
         id: "gaming",
         name: "Gaming",
-        brightness: 90,
+        brightness: 100,
         effect: {
           kind: "gradient",
           primary_color: { r: 244, g: 63, b: 94 },
@@ -179,7 +193,7 @@ const DEV_PREVIEW_STATE: BootstrapState = {
       {
         id: "ambilight",
         name: "Ambilight",
-        brightness: 90,
+        brightness: 100,
         effect: {
           kind: "ambilight",
           primary_color: { r: 56, g: 189, b: 248 },
@@ -192,7 +206,7 @@ const DEV_PREVIEW_STATE: BootstrapState = {
       {
         id: "audio",
         name: "Audio",
-        brightness: 90,
+        brightness: 100,
         effect: {
           kind: "audio_spectrum",
           primary_color: { r: 34, g: 197, b: 94 },
@@ -230,14 +244,14 @@ const DEV_PREVIEW_STATE: BootstrapState = {
       },
     ],
     placements: [
-      { device_id: "asus-aura-0b05-19af", x: 0.08, y: 0.14, width: 0.28, height: 0.36, rotation_deg: 0, led_count: 32 },
-      { device_id: "asgard-ddr4-smbus", x: 0.42, y: 0.16, width: 0.12, height: 0.32, rotation_deg: 0, led_count: 16 },
-      { device_id: "aula-f75-he", x: 0.16, y: 0.58, width: 0.68, height: 0.28, rotation_deg: 0, led_count: 80 },
+      { device_id: "asus-aura-0b05-19af", x: 0.08, y: 0.14, width: 0.28, height: 0.36, rotation_deg: 0, led_count: 32, brightness: 100 },
+      { device_id: "asgard-ddr4-smbus", x: 0.42, y: 0.16, width: 0.12, height: 0.32, rotation_deg: 0, led_count: 16, brightness: 100 },
+      { device_id: "aula-f75-he", x: 0.16, y: 0.58, width: 0.68, height: 0.28, rotation_deg: 0, led_count: 80, brightness: 100 },
     ],
     automation: {
       auto_off_on_lock: true,
       idle_timeout_mins: 15,
-      night_mode_enabled: true,
+      night_mode_enabled: false,
       night_start: "23:00",
       night_end: "07:00",
       night_brightness: 25,
@@ -245,15 +259,18 @@ const DEV_PREVIEW_STATE: BootstrapState = {
       low_battery_crit_pct: 10,
       start_with_windows: false,
       app_rules: [
-        { id: "rule-feathertune", executable: "feathertune.exe", profile_id: "ambilight", enabled: true },
         { id: "rule-vlc", executable: "vlc.exe", profile_id: "ambilight", enabled: true },
         { id: "rule-cs2", executable: "cs2.exe", profile_id: "gaming", enabled: true },
       ],
     },
     imported_hub_presets: [],
+    ui: { close_action: "tray", tray_hint_shown: false },
   },
   engine_status: { mode: "static_zero_cpu" },
   active_rule_app: null,
+  night_mode_active: false,
+  output_brightness: 100,
+  app_version: "dev",
   devices: [
     {
       id: "asus-aura-0b05-19af",
@@ -272,7 +289,7 @@ const DEV_PREVIEW_STATE: BootstrapState = {
     },
     {
       id: "asgard-ddr4-smbus",
-      name: "Asgard DDR4 RGB (2x8GB)",
+      name: "ENE DRAM RGB",
       kind: "ram",
       transport: "pawn_io_smbus",
       vid_pid: "1022:790B",
@@ -280,8 +297,8 @@ const DEV_PREVIEW_STATE: BootstrapState = {
       status_note: "PawnIO 2.0.0 ready",
       capabilities: ["rgb"],
       zones: [
-        { id: "dimm-a2", name: "DIMM A2", led_count: 8 },
-        { id: "dimm-b2", name: "DIMM B2", led_count: 8 },
+        { id: "dimm-1", name: "DIMM 1", led_count: 8 },
+        { id: "dimm-2", name: "DIMM 2", led_count: 8 },
       ],
       telemetry: null,
     },
@@ -370,6 +387,10 @@ export async function apiUpdateEffect(
       p.effect = effect;
       if (profileBrightness !== undefined) p.brightness = profileBrightness;
     }
+    devState.config.power_on = true;
+    devState.engine_status = ["off", "solid", "gradient"].includes(effect.kind)
+      ? effect.kind === "off" ? { mode: "off" } : { mode: "static_zero_cpu" }
+      : { mode: "dynamic", fps: 60 };
     return structuredClone(devState);
   }
   return invoke<BootstrapState>("update_effect", {
@@ -393,6 +414,25 @@ export async function apiUpdateAuraLedCounts(counts: [number, number]): Promise<
     return structuredClone(devState);
   }
   return invoke<BootstrapState>("update_aura_led_counts", { counts });
+}
+
+export async function apiUpdateUiPrefs(prefs: UiPrefs): Promise<BootstrapState> {
+  if (!isTauriRuntime()) {
+    devState.config.ui = prefs;
+    return structuredClone(devState);
+  }
+  return invoke<BootstrapState>("update_ui_prefs", { prefs });
+}
+
+/** State pushed by the backend when something outside this window changed it. */
+export async function onStateChanged(fn: (state: BootstrapState) => void): Promise<() => void> {
+  if (!isTauriRuntime()) return () => {};
+  return getCurrentWebviewWindow().listen<BootstrapState>("rgb://state", (e) => fn(e.payload));
+}
+
+export async function apiQuitApp(): Promise<void> {
+  if (!isTauriRuntime()) return;
+  await invoke("quit_app_command");
 }
 
 export async function apiSetLocale(locale: Locale): Promise<BootstrapState> {
@@ -463,10 +503,64 @@ export async function apiImportHubPresets(): Promise<HubImportResponse> {
   return invoke<HubImportResponse>("import_hub_presets");
 }
 
-export async function apiSubscribeCanvasPreview(onFrame: (pixels: number[]) => void): Promise<void> {
-  if (!isTauriRuntime()) return;
-  const channel = new Channel<number[]>();
-  channel.onmessage = onFrame;
+/** Browser-only stand-in for the Rust engine so the UI can be previewed without hardware. */
+function startDevPreview(onFrame: (pixels: Uint8Array) => void) {
+  const w = devState.canvas_width;
+  const h = devState.canvas_height;
+  let last = 0;
+  const frame = (ms: number) => {
+    requestAnimationFrame(frame);
+    if (ms - last < 33) return;
+    last = ms;
+    const cfg = devState.config;
+    const e = cfg.profiles.find((p) => p.id === cfg.active_profile_id)?.effect;
+    const buf = new Uint8Array(w * h * 3);
+    const t = ms / 1000;
+    if (cfg.power_on && e && e.kind !== "off") {
+      const a = e.primary_color;
+      const b = e.secondary_color;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          let r: number, g: number, bl: number;
+          if (e.kind === "rainbow_wave") {
+            const hue = ((x / w) * 360 + t * 60) % 360;
+            const f = (n: number) => {
+              const k = (n + hue / 60) % 6;
+              return 255 * (1 - Math.max(0, Math.min(k, 4 - k, 1)));
+            };
+            [r, g, bl] = [f(5), f(3), f(1)];
+          } else {
+            const k =
+              e.kind === "solid"
+                ? 0
+                : e.kind === "gradient"
+                  ? x / w
+                  : 0.5 + 0.5 * Math.sin(x * 0.06 + t * 0.9 + Math.sin(y * 0.08 + t * 0.6) * 1.8);
+            const v = e.kind === "solid" || e.kind === "gradient" ? 1 : 0.6 + 0.4 * Math.sin(y * 0.05 - t * 0.8 + x * 0.02);
+            r = (a.r + (b.r - a.r) * k) * v;
+            g = (a.g + (b.g - a.g) * k) * v;
+            bl = (a.b + (b.b - a.b) * k) * v;
+          }
+          const i = (y * w + x) * 3;
+          buf[i] = r;
+          buf[i + 1] = g;
+          buf[i + 2] = bl;
+        }
+      }
+    }
+    onFrame(buf);
+  };
+  requestAnimationFrame(frame);
+}
+
+export async function apiSubscribeCanvasPreview(onFrame: (pixels: Uint8Array) => void): Promise<void> {
+  if (!isTauriRuntime()) {
+    startDevPreview(onFrame);
+    return;
+  }
+  // Backend sends raw RGB888 bytes (ArrayBuffer), not a JSON number array.
+  const channel = new Channel<ArrayBuffer | number[]>();
+  channel.onmessage = (msg) => onFrame(Array.isArray(msg) ? Uint8Array.from(msg) : new Uint8Array(msg));
   await invoke("subscribe_canvas_preview", { channel });
 }
 

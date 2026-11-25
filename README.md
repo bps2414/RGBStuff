@@ -1,145 +1,148 @@
-[🇧🇷 Leia em Português (Brasil)](./README.pt-BR.md)
+<p align="center">
+  <img src="docs/brand/logo.png" alt="RGBStuff logo" width="96" height="96">
+</p>
 
-# RGBStuff
+<h1 align="center">RGBStuff</h1>
 
-**Ultra-lightweight Rust + Tauri v2 unified RGB controller and peripheral telemetry hub for Windows 11.**
+<p align="center"><strong>One small app for all the RGB on your desk.</strong><br>Fans, RAM and keyboard on one light canvas, battery of your mouse and headset in the tray, and 0% CPU when nothing moves.</p>
 
-Built to replace bloated, freemium background lighting suites and fragmented vendor hubs (`A HUB`, `Aula Hub`, `MCHOSE HUB`) with a native Rust daemon, a Windows 11 Mica UI that frees WebView2 memory completely when closed, and **0% background CPU** for static/gaming profiles.
+<p align="center">
+  <a href="https://github.com/bps2414/RGBStuff/releases/latest"><strong>Download</strong></a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#supported-hardware">Hardware</a> ·
+  <a href="#faq">FAQ</a> ·
+  <a href="README.pt-BR.md">Português</a>
+</p>
 
----
+<p align="center">
+  <a href="https://github.com/bps2414/RGBStuff/releases/latest"><img src="https://img.shields.io/github/v/release/bps2414/RGBStuff?label=release&color=24292f" alt="Latest release"></a>
+  <a href="https://github.com/bps2414/RGBStuff/releases"><img src="https://img.shields.io/github/downloads/bps2414/RGBStuff/total?color=24292f" alt="Downloads"></a>
+  <img src="https://img.shields.io/badge/Windows-11-24292f" alt="Windows 11">
+  <img src="https://img.shields.io/badge/built_with-Rust%20%2B%20Tauri%202-24292f" alt="Built with Rust and Tauri 2">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-24292f" alt="MIT license"></a>
+</p>
 
-## Key Features
+![RGBStuff Studio with the Synthwave scene applied](docs/images/studio-effects.png)
 
-- **Zero-WebView2 Background Footprint:** Starts silently in the Windows System Tray (`windows: []`). Both the **Tray Popover** (`360×480`) and **Studio** (`1160×740`) windows are created on demand with Windows 11 Mica (`window-vibrancy`) and completely **destroyed (`window.destroy()`)** when closed or unfocused.
-- **Hybrid 2D Spatial Canvas (`rgb-engine`):** `128×72` internal RGB canvas with bilinear sampling per device LED, per-bus rate limiting (`BusFramePacer`: Aura 60 Hz, Aula 30 Hz, RAM 15 Hz), and `DirtyFrameTracker` to skip redundant USB/SMBus writes.
-- **Zero-CPU Static Mode:** Effects like `Off`, `Solid`, and `Gradient` apply once and suspend the engine loop via `tokio::sync::Notify` (`0.0%` CPU). The default **Gaming** preset uses static `Gradient` so lighting never steals CPU/GPU cycles in games.
-- **Demand-Driven Screen Ambilight & Audio Reactive (`rgb-capture`):**
-  - **DXGI Desktop Duplication (`64×36`):** Spins up **only** when the active profile uses `Ambilight` and tears down all D3D11/DXGI handles immediately when switching away.
-  - **WASAPI Loopback + `rustfft`:** 16 logarithmic frequency bands with Hann windowing, active **only** in `AudioSpectrum` mode.
-- **Focus-Aware App Rules & Windows Automations (`rgb-automation`):**
-  - Automatically switches profiles when a target app or game enters focus (default rules include `feathertune.exe → ambilight`, `vlc.exe → ambilight`, `cs2.exe → gaming`) and restores the previous profile when focus leaves.
-  - Ignores transient OS overlays and RGBStuff itself so opening the tray popover never overrides an active rule.
-  - Includes a **1-click Running Apps Picker** (`EnumWindows`) in the Automations tab.
-  - Handles `Win+L` (`WTSRegisterSessionNotification`), sleep/wake USB recovery (`WM_POWERBROADCAST`), idle timeout (`GetLastInputInfo`), scheduled Night Mode dimming, and native Windows low-battery notifications.
-- **Read-Only Hub Preset Importer (`rgb-core::hub_importer`):** Reads local non-sensitive configs/metadata from **A HUB (Rapoo)**, **Aula Hub**, and **MCHOSE HUB** without modifying vendor files or touching cookies/auth data.
-- **Full Internationalization (`pt-BR` / `en-US`):** Instant live language switching synced to atomic TOML config persistence.
+## Why RGBStuff
 
----
+- **One app instead of four.** Vendor hubs each want their own tray icon, service and updater. RGBStuff drives the motherboard ARGB, the RAM and the keyboard from one Rust process.
+- **Free when it's still.** Static looks (solid, gradient, off) are written once and the engine goes to sleep: 0% CPU while you game.
+- **Lives in the tray.** Closing the window destroys it to give WebView2's memory back; the lighting keeps running. A click on the icon brings everything back.
+- **Your whole setup is one picture.** Effects are drawn on a 2D canvas and every LED takes the color under it, so a wave really crosses from the fans to the keyboard.
 
-## Supported Hardware
+## How it works
 
-| Component | Target Hardware | VID:PID / Bus | Capabilities (Phase 1) |
-| :--- | :--- | :--- | :--- |
-| **Motherboard & Fans ARGB** | ASUS TUF GAMING A520M-PLUS II (Aura Gen2) | `0B05:19AF` (`USB HID`, `0xFF72`) | Direct per-LED streaming across 2 ARGB headers (configurable LED counts) |
-| **DRAM RGB** | Asgard DDR4-3200 (2×8 GB, ENE controller) | `1022:790B` (`AMD SMBus` via **PawnIO**) | Guarded per-LED updates via optional `rgb-smbus-svc` |
-| **Keyboard** | Aula F75 HE | `38A6:2729` (`USB HID`, `0xFF68`/`0xFF67`) | Spatial canvas mapping & live connection detection (per-key streaming in progress) |
-| **Mouse** | Rapoo VT0 / VT Air Max | `24AE:14A1` (`USB HID`, `0xFF00`) | Passive battery %, charging state & DPI telemetry (Report `0x07`) |
-| **Headset** | MCHOSE V9 Pro 2 | `3837:6011` (`USB HID`, `0xFF07`) | Passive connection & battery telemetry |
+1. **Install** `RGBStuff_<version>_x64-setup.exe`. No admin rights needed, no Visual C++ runtime to download.
+2. **Pick a quick scene** (Ocean, Synthwave, Lava, Galaxy…) or build your own in **Effects**: only the controls that change the current effect are shown.
+3. **Arrange** your devices on the **Canvas** so effects flow across the desk the way they're placed in real life.
+4. **Forget about it.** Turn on *Start with my PC* in **Settings**: RGBStuff starts hidden in the tray and applies your lighting at boot.
 
----
+![The 2D canvas with fans, RAM and keyboard placed over a plasma effect](docs/images/studio-canvas.png)
 
-## Architecture Overview
+## Features
 
-RGBStuff separates **user-session hardware/UI** from **privileged SMBus RAM writes** so the main app never triggers UAC prompts at startup and DXGI/WASAPI always run cleanly in the interactive session.
+**Lighting**
+- 12 effects: solid, gradient, rainbow wave, breathing, dual pulse, starlight, aurora, plasma, ripple, screen ambilight, audio reactive and off.
+- 12 one-click scenes, each a complete look (effect, colors, motion).
+- Profiles (Work, Gaming, Ambilight, Audio, Night, Off) one click away in the sidebar, the tray popover and the tray menu.
+- **Per-device intensity up to 200%.** Above 100% is a boost that lifts dim content up to full LED drive without changing the hue, for fans or RAM that look weaker than the rest.
+- The interface itself glows with the color your LEDs are showing.
 
-```mermaid
-flowchart TB
-    subgraph UserSession["User Session (Unprivileged · No UAC)"]
-        UI["Tauri v2 Windows (Created on demand · window.destroy() on close)<br/>Tray Popover (360×480) & Studio (1160×740)"]
-        Core["rgbstuff-desktop (Rust Core + Tray)<br/>LightingEngine · BusPacer · AutomationWatcher"]
-        Capture["rgb-capture (Active only when needed)<br/>DXGI Ambilight · WASAPI Loopback FFT"]
-        Drivers["rgb-drivers (USB HID User-Space)<br/>ASUS Aura · Aula F75 HE · Rapoo · MCHOSE"]
-        UI <-->|"Tauri IPC + Channel"| Core
-        Capture --> Core
-        Core --> Drivers
-    end
+**Screen and sound**
+- Ambilight with black-bar cropping, a vivid dominant color and smooth fades. Screen capture runs only while Ambilight is active.
+- Audio spectrum from WASAPI loopback with falling peaks and a bass glow. The capture stops the moment you switch away.
 
-    subgraph SystemSession["Optional Elevated Service (Session 0)"]
-        Svc["rgb-smbus-svc<br/>Global SMBus Mutex · Whitelist 0x70..=0x77"]
-        PawnIO["PawnIO Signed Kernel Bridge (PawnIOLib.dll)"]
-        Svc --> PawnIO
-    end
+**Automations**
+- Profile per app in focus (for example `vlc.exe → Ambilight`, `cs2.exe → Gaming`), with a picker of the apps open right now.
+- Lights off on Win+L and after idle time, back on when you return.
+- Night mode with its own brightness cap, shown in the title bar while it's active.
+- Low-battery notifications for the mouse and headset.
 
-    Drivers -->|"Named Pipe \\.\pipe\rgbstuff-smbus-v1"| Svc
-```
+**Everyday**
+- Tray popover: power, brightness, profiles, scenes and battery levels.
+- Tray menu: profiles, brightness presets, power, quit. In Portuguese or English, same as the app.
+- Close button goes to the tray or quits, your choice. Ctrl+1…5 switches tabs, Ctrl+Shift+L toggles the lights.
+- Every window stays in sync: a change in the tray, the Studio or an automation shows up everywhere.
 
-See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for full technical details and [docs/protocols/hardware-probe.md](./docs/protocols/hardware-probe.md) for captured device descriptors.
+<p align="center"><img src="docs/images/tray-popover.png" alt="Tray popover" width="340"></p>
 
----
+## Install
 
-## Safety & Anti-Cheat Design
+1. Download `RGBStuff_<version>_x64-setup.exe` from the [latest release](https://github.com/bps2414/RGBStuff/releases/latest).
+2. Run it. It installs for your user under `%LOCALAPPDATA%`, adds a Start menu entry and installs WebView2 if Windows lacks it.
+3. Open **RGBStuff**. The Studio opens on the first run; later it can start straight into the tray.
 
-- **No WinRing0:** Uses **PawnIO** (`PawnIOLib.dll`) instead of blacklisted `WinRing0x64.sys`, keeping Windows Defender and modern anti-cheats happy.
-- **Global SMBus Synchronization:** Acquires Windows mutex `Global\Access_SMBUS.HTP.Method` before SMBus operations to coexist safely with HWiNFO, CPU-Z, and AIDA64.
-- **Hard-Coded SPD EEPROM Protection:** `rgb_drivers::validate_smbus_address` strictly enforces a `0x70..=0x77` whitelist and blocks `0x50..=0x57` (SPD EEPROM) at both the client and service boundaries.
+Windows SmartScreen may warn about an unknown publisher because the installer isn't code-signed yet. Choose **More info → Run anyway**.
 
----
+Uninstalling from **Settings → Apps** removes the app and its *Start with my PC* entry. Your settings stay in `%APPDATA%\rgbstuff\RGBStuff\config\config.toml`.
 
-## Workspace Structure
+## Supported hardware
+
+| Device | Connection | What RGBStuff does |
+| --- | --- | --- |
+| ASUS Aura USB ARGB controller (`0B05:19AF`) | USB HID | Per-LED direct mode on 2 ARGB headers, LED count per header |
+| ENE DRAM RGB (e.g. Asgard DDR4) | SMBus via [PawnIO](https://pawnio.eu) | Per-LED direct mode, SMBus addresses `0x70–0x77` only |
+| Aula F75 HE (`38A6:2729`) | USB HID | Static and per-key live colors |
+| Rapoo VT series mouse (`24AE:14A1`) | USB HID | Battery, charging, DPI |
+| MCHOSE V9 Pro 2 headset (`3837:6011`) | USB HID | Battery, connection |
+
+RGBStuff installs and runs on any Windows 11 PC (Windows 10 should work but is untested). Devices it doesn't have a driver for simply don't show up; the Canvas tells you when no RGB device was found.
+
+## FAQ
+
+**My fans or RAM look dimmer than the keyboard.**
+Open **Devices** and raise that device's **Intensity** above 100%. Also check the title bar: a moon chip means night mode is capping the brightness right now.
+
+**Clicking X closed the app.**
+Since 0.2.0 the X sends RGBStuff to the tray. If you prefer it to quit, change **Settings → When clicking X**.
+
+**RAM RGB says disconnected.**
+RAM lives on SMBus, which needs the [PawnIO](https://pawnio.eu) driver and administrator rights. Install PawnIO, then run RGBStuff as administrator or start `rgb-smbus-svc.exe` (attached to every release) elevated.
+
+**Is it safe with anti-cheats and hardware monitors?**
+RGBStuff does not use WinRing0. SMBus access goes through signed PawnIO, takes the same global SMBus mutex as HWiNFO, CPU-Z and AIDA64, and refuses any address outside `0x70–0x77`, so SPD EEPROM (`0x50–0x57`) can't be touched.
+
+**My device isn't listed.**
+Open an [issue](https://github.com/bps2414/RGBStuff/issues) with the output of `cargo run -p hid-probe -- list`. Drivers are small, isolated Rust modules in `crates/rgb-drivers`.
+
+## Under the hood
+
+A Tauri 2 app with a Rust core and a React 19 interface. The engine renders effects onto a 128×72 canvas, samples every LED bilinearly, paces each bus (Aura 60 Hz, keyboard 30 Hz, RAM 15 Hz) and skips frames that didn't change. Windows are created on demand and destroyed on close; the engine thread and the tray keep running.
 
 ```text
-RGBStuff/
-├── crates/
-│   ├── rgb-core/          # Color math, device traits, atomic TOML config, Hub Preset Importer
-│   ├── rgb-engine/        # 128×72 Canvas2D, bilinear sampling, effects, BusFramePacer, Zero-CPU sleep
-│   ├── rgb-drivers/       # ASUS Aura USB, Aula F75 HE, Rapoo, MCHOSE, ENE DRAM IPC, SMBus guard
-│   ├── rgb-capture/       # Demand-driven DXGI Desktop Duplication & WASAPI Loopback + rustfft
-│   ├── rgb-automation/    # Win+L lock, sleep/wake, idle, night schedule, foreground app rules
-│   └── rgb-smbus-svc/     # Optional elevated SMBus Named Pipe service using PawnIOLib.dll
-├── apps/
-│   └── desktop/           # Tauri v2 + React 19 + TypeScript + Tailwind v4 + Radix UI + Zustand + i18n
-├── tools/
-│   └── hid-probe/         # CLI hardware probe for safe VID:PID, Aura firmware & PawnIO checks
-└── docs/
-    ├── ARCHITECTURE.md
-    └── protocols/hardware-probe.md
+crates/
+  rgb-core        colors, config (atomic TOML), device traits, hub importer
+  rgb-engine      canvas, effects, frame pacing, zero-CPU sleep
+  rgb-drivers     ASUS Aura USB, ENE DRAM, Aula F75 HE, Rapoo, MCHOSE
+  rgb-capture     DXGI ambilight, WASAPI loopback + FFT
+  rgb-automation  lock, sleep/wake, idle, night window, focused app
+  rgb-smbus-svc   optional elevated SMBus service (PawnIO)
+apps/desktop      Tauri 2 + React 19 + Tailwind 4 + Radix UI + Zustand
+tools/hid-probe   hardware probe CLI
 ```
 
----
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the details.
 
-## Build & Development
+### Building
 
-### Prerequisites (Windows 11)
-- **Rust** (`1.85+` / Edition 2024) + MSVC Build Tools
-- **Bun** (`1.2+`) for frontend dependency management & Vite builds
-- **PawnIO** *(optional, only required for Asgard DDR4 SMBus RAM RGB)*
+Windows with Rust (MSVC) and [Bun](https://bun.sh):
 
-### 1. Frontend Build
 ```powershell
 cd apps\desktop
 bun install
-bunx tsc --noEmit
-bun run build
-```
-
-### 2. Run All Tests
-```powershell
+bun tauri build      # installer in target\release\bundle\nsis\
 cargo test --workspace
 ```
 
-### 3. Hardware Probe CLI (Optional)
-```powershell
-cargo run -p hid-probe -- list
-cargo run -p hid-probe -- aura-info
-cargo run -p hid-probe -- pawnio-check
-```
-
-### 4. Build Release Binaries
-```powershell
-cargo build --release -p rgbstuff-desktop -p rgb-smbus-svc
-```
-Outputs:
-- `target\release\rgbstuff-desktop.exe`
-- `target\release\rgb-smbus-svc.exe`
-
----
-
-## Roadmap
-
-- **Phase 1 (Complete):** Unified RGB engine, 2D spatial canvas, ASUS Aura USB direct mode, PawnIO SMBus safety service, demand-driven DXGI Ambilight & WASAPI Audio, focus-aware app rules, Win+L/idle/night automations, read-only 3-Hub importer, and Tauri v2 Mica UI (`pt-BR` / `en-US`).
-- **Phase 2 (Next):** Full bidirectional replacement of `A HUB` (DPI stages, polling rate, LOD, debounce), `Aula Hub` (Hall Effect 0.1–4.0 mm actuation, Rapid Trigger, DKS/SOCD, per-key live streaming), and `MCHOSE HUB` (10-band onboard EQ, mic sidetone).
-- **Phase 3 (Future):** Declarative JSON/TOML device layout manifests for community hardware support.
+`bun tauri dev` runs the app with hot reload; `bun run dev` alone previews the interface in a browser with sample devices.
 
 ## License
 
-[MIT](./LICENSE)
+MIT. See [LICENSE](LICENSE).
+
+RGBStuff is an independent project, not affiliated with ASUS, Aula, Rapoo, MCHOSE or any hardware vendor. Their names are used only to describe compatibility.
+
+---
+
+<p align="center">If RGBStuff replaced a hub or two on your PC, a ★ on the repo helps other people find it.</p>

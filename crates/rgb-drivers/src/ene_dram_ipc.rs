@@ -521,7 +521,7 @@ impl RgbDevice for EneDramIpcDriver {
     }
 
     fn name(&self) -> &str {
-        "Asgard DDR4 RGB (2x8GB)"
+        "ENE DRAM RGB"
     }
 
     fn kind(&self) -> DeviceKind {
@@ -576,7 +576,9 @@ impl RgbDevice for EneDramIpcDriver {
     }
 
     fn is_connected(&self) -> bool {
-        !self.dimms.is_empty() || self.service_connected || self.pawnio_version.is_some()
+        // PawnIO being installed is not enough: without detected DIMMs (or the
+        // elevated service) frames go nowhere, so report it as not connected.
+        !self.dimms.is_empty() || self.service_connected
     }
 
     fn zones(&self) -> Vec<LedZone> {
@@ -584,12 +586,12 @@ impl RgbDevice for EneDramIpcDriver {
             return vec![
                 LedZone {
                     id: "dimm-a2".into(),
-                    name: "DIMM A2 (Asgard 8GB)".into(),
+                    name: "DIMM 1".into(),
                     led_count: 8,
                 },
                 LedZone {
                     id: "dimm-b2".into(),
-                    name: "DIMM B2 (Asgard 8GB)".into(),
+                    name: "DIMM 2".into(),
                     led_count: 8,
                 },
             ];

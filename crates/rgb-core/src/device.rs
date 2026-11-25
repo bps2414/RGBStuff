@@ -58,6 +58,14 @@ pub struct DevicePlacement {
     pub height: f32,
     pub rotation_deg: f32,
     pub led_count: usize,
+    /// Per-device output gain in percent (`0..=200`). Above 100 boosts dim
+    /// content up to full LED drive while keeping the hue.
+    #[serde(default = "default_device_brightness")]
+    pub brightness: u8,
+}
+
+fn default_device_brightness() -> u8 {
+    100
 }
 
 impl DevicePlacement {

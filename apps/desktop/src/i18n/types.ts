@@ -8,6 +8,9 @@ export type EffectKind =
   | "breathing"
   | "dual_pulse"
   | "starlight"
+  | "aurora"
+  | "plasma"
+  | "ripple"
   | "ambilight"
   | "audio_spectrum";
 
@@ -19,14 +22,17 @@ export interface TranslationDictionary {
     powerOn: string;
     powerOff: string;
     globalBrightness: string;
-    quickPresets: string;
     peripherals: string;
     language: string;
     close: string;
     minimize: string;
     maximize: string;
-    save: string;
-    saved: string;
+    profiles: string;
+    scenes: string;
+    /** `{n}` = night brightness cap. */
+    nightActive: string;
+    output: string;
+    quit: string;
   };
   engine: {
     off: string;
@@ -40,6 +46,7 @@ export interface TranslationDictionary {
     effects: string;
     devices: string;
     automations: string;
+    settings: string;
   };
   presets: Record<string, string>;
   effects: {
@@ -51,6 +58,14 @@ export interface TranslationDictionary {
     angle: string;
     scale: string;
     profileBrightness: string;
+    scenesTitle: string;
+    scenesDesc: string;
+    editing: string;
+    allEffects: string;
+    parameters: string;
+    responsiveness: string;
+    unify: string;
+    noParams: string;
     items: Record<EffectKind, { name: string; description: string }>;
   };
   canvas: {
@@ -58,13 +73,17 @@ export interface TranslationDictionary {
     subtitle: string;
     dragHint: string;
     selectedDevice: string;
-    position: string;
-    size: string;
     rotation: string;
     leds: string;
     inspectorTitle: string;
     previewLive: string;
     previewStatic: string;
+    width: string;
+    height: string;
+    intensity: string;
+    noDevices: string;
+    noDevicesDesc: string;
+    notDetected: string;
   };
   devices: {
     title: string;
@@ -72,18 +91,16 @@ export interface TranslationDictionary {
     refresh: string;
     connected: string;
     disconnected: string;
-    sleeping: string;
     charging: string;
     battery: string;
-    dpi: string;
     noRgbTelemetryOnly: string;
     auraCalibration: string;
     header1Leds: string;
     header2Leds: string;
-    phase2Title: string;
-    phase2Rapoo: string;
-    phase2Aula: string;
-    phase2Mchose: string;
+    intensity: string;
+    intensityDesc: string;
+    boost: string;
+    ramHint: string;
     transportUsb: string;
     transportSmbus: string;
     hubImporterTitle: string;
@@ -104,8 +121,6 @@ export interface TranslationDictionary {
     disabled: string;
     nightMode: string;
     nightModeDesc: string;
-    nightStart: string;
-    nightEnd: string;
     nightBrightness: string;
     appRulesTitle: string;
     appRulesDesc: string;
@@ -119,10 +134,25 @@ export interface TranslationDictionary {
     batteryAlertsTitle: string;
     lowWarn: string;
     lowCrit: string;
-    systemSection: string;
+  };
+  settings: {
+    title: string;
+    subtitle: string;
+    startup: string;
     startWithWindows: string;
     startWithWindowsDesc: string;
+    closeAction: string;
+    closeActionDesc: string;
+    closeToTray: string;
+    closeQuit: string;
+    interface: string;
     languageLabel: string;
     languageDesc: string;
+    about: string;
+    version: string;
+    aboutDesc: string;
+    quitDesc: string;
+    shortcuts: string;
+    shortcutsDesc: string;
   };
 }

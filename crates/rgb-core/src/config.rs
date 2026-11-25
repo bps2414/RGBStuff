@@ -26,6 +26,9 @@ pub enum EffectKind {
     Breathing,
     DualPulse,
     Starlight,
+    Aurora,
+    Plasma,
+    Ripple,
     Ambilight,
     AudioSpectrum,
 }
@@ -107,7 +110,7 @@ impl Default for AutomationConfig {
         Self {
             auto_off_on_lock: true,
             idle_timeout_mins: 15,
-            night_mode_enabled: true,
+            night_mode_enabled: false,
             night_start: "23:00".to_string(),
             night_end: "07:00".to_string(),
             night_brightness: 25,
@@ -115,12 +118,6 @@ impl Default for AutomationConfig {
             low_battery_crit_pct: 10,
             start_with_windows: false,
             app_rules: vec![
-                AppProfileRule {
-                    id: "rule-feathertune".to_string(),
-                    executable: "feathertune.exe".to_string(),
-                    profile_id: "ambilight".to_string(),
-                    enabled: true,
-                },
                 AppProfileRule {
                     id: "rule-vlc".to_string(),
                     executable: "vlc.exe".to_string(),
@@ -138,6 +135,36 @@ impl Default for AutomationConfig {
     }
 }
 
+/// What the Studio window's close button does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloseAction {
+    /// Destroy the window (freeing WebView2) and keep running in the tray.
+    #[default]
+    Tray,
+    /// Quit RGBStuff entirely.
+    Quit,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UiPrefs {
+    pub close_action: CloseAction,
+    /// The "still running in the tray" notice is shown only once.
+    pub tray_hint_shown: bool,
+}
+
+impl Default for UiPrefs {
+    fn default() -> Self {
+        Self {
+            close_action: CloseAction::Tray,
+            tray_hint_shown: false,
+        }
+    }
+}
+
+pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     pub schema_version: u32,
@@ -151,22 +178,24 @@ pub struct AppConfig {
     pub automation: AutomationConfig,
     #[serde(default)]
     pub imported_hub_presets: Vec<ImportedHubItem>,
+    #[serde(default)]
+    pub ui: UiPrefs,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            schema_version: 1,
+            schema_version: CURRENT_SCHEMA_VERSION,
             locale: Locale::PtBr,
             power_on: true,
-            global_brightness: 80,
+            global_brightness: 100,
             active_profile_id: "work".to_string(),
             aura_argb_led_counts: [16, 16],
             profiles: vec![
                 LightingProfile {
                     id: "work".to_string(),
                     name: "Work".to_string(),
-                    brightness: 70,
+                    brightness: 100,
                     effect: EffectParams {
                         kind: EffectKind::Gradient,
                         primary_color: Rgb::new(224, 242, 254),
@@ -179,7 +208,7 @@ impl Default for AppConfig {
                 LightingProfile {
                     id: "gaming".to_string(),
                     name: "Gaming".to_string(),
-                    brightness: 90,
+                    brightness: 100,
                     effect: EffectParams {
                         kind: EffectKind::Gradient,
                         primary_color: Rgb::new(244, 63, 94),
@@ -192,7 +221,7 @@ impl Default for AppConfig {
                 LightingProfile {
                     id: "ambilight".to_string(),
                     name: "Ambilight".to_string(),
-                    brightness: 90,
+                    brightness: 100,
                     effect: EffectParams {
                         kind: EffectKind::Ambilight,
                         primary_color: Rgb::new(56, 189, 248),
@@ -205,7 +234,7 @@ impl Default for AppConfig {
                 LightingProfile {
                     id: "audio".to_string(),
                     name: "Audio".to_string(),
-                    brightness: 90,
+                    brightness: 100,
                     effect: EffectParams {
                         kind: EffectKind::AudioSpectrum,
                         primary_color: Rgb::new(34, 197, 94),
@@ -251,6 +280,7 @@ impl Default for AppConfig {
                     height: 0.36,
                     rotation_deg: 0.0,
                     led_count: 32,
+                    brightness: 100,
                 },
                 DevicePlacement {
                     device_id: "asgard-ddr4-smbus".to_string(),
@@ -260,6 +290,7 @@ impl Default for AppConfig {
                     height: 0.32,
                     rotation_deg: 0.0,
                     led_count: 16,
+                    brightness: 100,
                 },
                 DevicePlacement {
                     device_id: "aula-f75-he".to_string(),
@@ -269,10 +300,12 @@ impl Default for AppConfig {
                     height: 0.28,
                     rotation_deg: 0.0,
                     led_count: 80,
+                    brightness: 100,
                 },
             ],
             automation: AutomationConfig::default(),
             imported_hub_presets: Vec::new(),
+            ui: UiPrefs::default(),
         }
     }
 }
@@ -303,8 +336,31 @@ impl AppConfig {
             return Ok(cfg);
         }
         let raw = fs::read_to_string(path)?;
-        let parsed: Self = toml::from_str(&raw)?;
+        let mut parsed: Self = toml::from_str(&raw)?;
+        if parsed.migrate() {
+            let _ = parsed.save_atomic(path);
+        }
         Ok(parsed)
+    }
+
+    /// Upgrades configs written by older versions. Returns true when anything changed.
+    ///
+    /// v1 shipped night mode on by default (capping everything to 25% from 23:00)
+    /// and dimmed the built-in profiles to 70-90%, which read as "the LEDs are weak".
+    pub fn migrate(&mut self) -> bool {
+        if self.schema_version >= CURRENT_SCHEMA_VERSION {
+            return false;
+        }
+        if self.schema_version < 2 {
+            self.automation.night_mode_enabled = false;
+            for p in &mut self.profiles {
+                if matches!(p.id.as_str(), "work" | "gaming" | "ambilight" | "audio") {
+                    p.brightness = 100;
+                }
+            }
+        }
+        self.schema_version = CURRENT_SCHEMA_VERSION;
+        true
     }
 
     pub fn save_atomic(&self, path: &Path) -> Result<(), ConfigError> {

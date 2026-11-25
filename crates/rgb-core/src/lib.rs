@@ -5,7 +5,8 @@ pub mod hub_importer;
 
 pub use color::{ColorParseError, Rgb, hsv_to_rgb};
 pub use config::{
-    AppConfig, AppProfileRule, AutomationConfig, ConfigError, EffectKind, EffectParams,
+    AppConfig, AppProfileRule, AutomationConfig, CURRENT_SCHEMA_VERSION, CloseAction, ConfigError,
+    EffectKind, EffectParams, UiPrefs,
     LightingProfile, Locale,
 };
 pub use device::{

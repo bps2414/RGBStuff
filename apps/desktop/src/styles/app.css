@@ -2,14 +2,13 @@
 
 :root {
   color-scheme: dark;
-  --surface-canvas: rgba(11, 11, 14, 0.78);
-  --surface-panel: rgba(20, 20, 25, 0.72);
-  --surface-elevated: rgba(28, 28, 34, 0.82);
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
-  --text-primary: #f4f4f5;
-  --text-muted: #a1a1aa;
-  --accent: #38bdf8;
+  /* What the LEDs are showing right now ("r g b"), updated from the preview. */
+  --live: 56 189 248;
+  --surface-canvas: rgba(10, 10, 13, 0.8);
+  --surface-panel: rgba(22, 22, 27, 0.66);
+  --surface-elevated: rgba(30, 30, 36, 0.78);
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.16);
 }
 
 html,
@@ -20,17 +19,49 @@ body,
   margin: 0;
   padding: 0;
   background: transparent;
-  font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Inter", system-ui, -apple-system, sans-serif;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+html.browser-preview body {
+  background: radial-gradient(1200px 700px at 20% 0%, #1b2140, transparent 60%),
+    radial-gradient(900px 600px at 100% 100%, #2a1235, transparent 60%), #07070a;
+}
+
+html.browser-preview #root {
+  padding: 28px;
+  box-sizing: border-box;
+}
+
+html.browser-preview .studio-shell {
+  box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+input,
+textarea {
+  user-select: text;
 }
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
 
+.font-display {
+  font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* The shell glows faintly with the current lighting. */
 .studio-shell {
-  background: var(--surface-canvas);
+  position: relative;
+  background:
+    radial-gradient(900px 420px at -10% -20%, rgb(var(--live) / 0.13), transparent 60%),
+    radial-gradient(700px 380px at 110% 120%, rgb(var(--live) / 0.08), transparent 60%),
+    var(--surface-canvas);
   backdrop-filter: blur(24px) saturate(140%);
+  transition: background 600ms ease;
 }
 
 .studio-panel {
@@ -41,11 +72,16 @@ body,
 .studio-card {
   background: var(--surface-elevated);
   border: 1px solid var(--border-subtle);
-  transition: transform 140ms ease-out, border-color 140ms ease-out, background-color 140ms ease-out;
+  transition: transform 140ms ease-out, border-color 140ms ease-out, background-color 140ms ease-out, box-shadow 200ms ease-out;
 }
 
 .studio-card:hover {
   border-color: var(--border-strong);
+}
+
+.studio-card[data-active="true"] {
+  border-color: rgb(var(--live) / 0.7);
+  box-shadow: 0 0 0 1px rgb(var(--live) / 0.35), 0 8px 30px -12px rgb(var(--live) / 0.55);
 }
 
 .studio-btn {
@@ -53,7 +89,111 @@ body,
 }
 
 .studio-btn:active {
-  transform: scale(0.98);
+  transform: scale(0.97);
+}
+
+.btn-primary {
+  background: rgb(244 244 245);
+  color: rgb(9 9 11);
+}
+
+.btn-primary:hover {
+  background: #fff;
+  box-shadow: 0 0 24px -6px rgb(var(--live) / 0.8);
+}
+
+/* Live accent bits */
+.live-dot {
+  background: rgb(var(--live));
+  box-shadow: 0 0 10px rgb(var(--live) / 0.9), 0 0 2px rgb(var(--live));
+  transition: background 400ms ease, box-shadow 400ms ease;
+}
+
+.live-text {
+  color: rgb(var(--live));
+}
+
+.live-ring {
+  box-shadow: 0 0 0 1px rgb(var(--live) / 0.45), 0 0 18px -4px rgb(var(--live) / 0.6);
+}
+
+.nav-item[data-active="true"] {
+  background: rgba(255, 255, 255, 0.09);
+  color: #fafafa;
+  box-shadow: inset 2px 0 0 rgb(var(--live));
+}
+
+.power-on {
+  border-color: rgb(var(--live) / 0.55);
+  background: rgb(var(--live) / 0.16);
+  color: #fff;
+  box-shadow: 0 0 20px -6px rgb(var(--live) / 0.9);
+}
+
+/* Sliders */
+.ui-slider-range {
+  background: linear-gradient(90deg, rgb(var(--live) / 0.55), rgb(var(--live)));
+}
+
+.ui-slider-thumb {
+  box-shadow: 0 0 0 3px rgb(var(--live) / 0.25), 0 1px 4px rgba(0, 0, 0, 0.5);
+  transition: box-shadow 120ms ease;
+}
+
+.ui-slider-thumb:hover,
+.ui-slider-thumb:focus-visible {
+  box-shadow: 0 0 0 5px rgb(var(--live) / 0.3), 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+.ui-toggle[data-state="checked"] {
+  background: rgb(var(--live));
+}
+
+/* Effect / scene thumbnails: dynamic ones drift so the grid feels alive. */
+.fx-thumb {
+  background-size: 200% 200%;
+}
+
+.fx-thumb[data-live="true"] {
+  animation: fx-drift 6s ease-in-out infinite alternate;
+}
+
+@keyframes fx-drift {
+  from {
+    background-position: 0% 30%;
+  }
+  to {
+    background-position: 100% 70%;
+  }
+}
+
+.fade-in {
+  animation: fade-in 180ms ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-thumb[data-live="true"],
+  .fade-in {
+    animation: none;
+  }
+}
+
+select,
+input[type="time"],
+input[type="number"],
+input[type="text"] {
+  color-scheme: dark;
 }
 
 /* Minimal custom scrollbar */

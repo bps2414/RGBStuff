@@ -73,6 +73,31 @@ impl Rgb {
     }
 }
 
+impl Rgb {
+    /// Multiplies the color by `gain` (`1.0` = unchanged). Gains above 1 stop
+    /// once the strongest channel hits 255, so boosted colors keep their hue.
+    #[inline]
+    pub fn apply_gain(self, gain: f32) -> Self {
+        if gain <= 0.0 {
+            return Self::BLACK;
+        }
+        if (gain - 1.0).abs() < 0.001 {
+            return self;
+        }
+        let max = self.r.max(self.g).max(self.b);
+        if max == 0 {
+            return self;
+        }
+        let k = gain.min(255.0 / max as f32);
+        let q = |v: u8| (v as f32 * k).round().clamp(0.0, 255.0) as u8;
+        Self {
+            r: q(self.r),
+            g: q(self.g),
+            b: q(self.b),
+        }
+    }
+}
+
 /// Converts HSV (`h` in `[0, 360)`, `s` in `0..=1`, `v` in `0..=1`) to `Rgb`.
 pub fn hsv_to_rgb(h: f32, s: f32, v: f32) -> Rgb {
     let h = h.rem_euclid(360.0);
