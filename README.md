@@ -17,7 +17,7 @@
 <p align="center">
   <a href="https://github.com/bps2414/RGBStuff/releases/latest"><img src="https://img.shields.io/github/v/release/bps2414/RGBStuff?label=release&color=24292f" alt="Latest release"></a>
   <a href="https://github.com/bps2414/RGBStuff/releases"><img src="https://img.shields.io/github/downloads/bps2414/RGBStuff/total?color=24292f" alt="Downloads"></a>
-  <img src="https://img.shields.io/badge/Windows-11-24292f" alt="Windows 11">
+  <img src="https://img.shields.io/badge/tested_on-Windows_11-24292f" alt="Tested on Windows 11">
   <img src="https://img.shields.io/badge/built_with-Rust%20%2B%20Tauri%202-24292f" alt="Built with Rust and Tauri 2">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-24292f" alt="MIT license"></a>
 </p>
@@ -79,15 +79,11 @@ Uninstalling from **Settings → Apps** removes the app and its *Start with my P
 
 ## Supported hardware
 
-| Device | Connection | What RGBStuff does |
-| --- | --- | --- |
-| ASUS Aura USB ARGB controller (`0B05:19AF`) | USB HID | Per-LED direct mode on 2 ARGB headers, LED count per header |
-| ENE DRAM RGB (e.g. Asgard DDR4) | SMBus via [PawnIO](https://pawnio.eu) | Per-LED direct mode, SMBus addresses `0x70–0x77` only |
-| Aula F75 HE (`38A6:2729`) | USB HID | Static and per-key live colors |
-| Rapoo VT series mouse (`24AE:14A1`) | USB HID | Battery, charging, DPI |
-| MCHOSE V9 Pro 2 headset (`3837:6011`) | USB HID | Battery, connection |
+RGBStuff talks to devices through small native drivers: motherboard ARGB controllers over USB HID, DRAM RGB over SMBus (through [PawnIO](https://pawnio.eu), addresses `0x70–0x77` only), per-key keyboards over USB HID, and battery telemetry for wireless mice and headsets.
 
-RGBStuff installs and runs on any Windows 11 PC (Windows 10 should work but is untested). Devices it doesn't have a driver for simply don't show up; the Canvas tells you when no RGB device was found.
+It installs and runs on any Windows 11 PC. Devices without a driver simply don't show up, and the Canvas tells you when no RGB device was found.
+
+**Tested on** Windows 11 with an ASUS Aura USB ARGB controller, ENE-based DDR4 RGB, an Aula F75 HE keyboard, a Rapoo VT mouse and a MCHOSE V9 Pro 2 headset. Windows 10 and other devices are untested; reports are welcome.
 
 ## FAQ
 
@@ -114,7 +110,7 @@ A Tauri 2 app with a Rust core and a React 19 interface. The engine renders effe
 crates/
   rgb-core        colors, config (atomic TOML), device traits, hub importer
   rgb-engine      canvas, effects, frame pacing, zero-CPU sleep
-  rgb-drivers     ASUS Aura USB, ENE DRAM, Aula F75 HE, Rapoo, MCHOSE
+  rgb-drivers     native USB HID and SMBus device drivers
   rgb-capture     DXGI ambilight, WASAPI loopback + FFT
   rgb-automation  lock, sleep/wake, idle, night window, focused app
   rgb-smbus-svc   optional elevated SMBus service (PawnIO)
@@ -141,7 +137,7 @@ cargo test --workspace
 
 MIT. See [LICENSE](LICENSE).
 
-RGBStuff is an independent project, not affiliated with ASUS, Aula, Rapoo, MCHOSE or any hardware vendor. Their names are used only to describe compatibility.
+RGBStuff is an independent project, not affiliated with any hardware vendor. Product names are used only to describe compatibility.
 
 ---
 

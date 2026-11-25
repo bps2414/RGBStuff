@@ -274,12 +274,12 @@ const DEV_PREVIEW_STATE: BootstrapState = {
   devices: [
     {
       id: "asus-aura-0b05-19af",
-      name: "ASUS Aura Controller (Fans ARGB)",
+      name: "ARGB Controller",
       kind: "motherboard_aura",
       transport: "usb_hid",
       vid_pid: "0B05:19AF",
       connected: true,
-      status_note: "FW AULA3-AR32-0220 · USB HID Direct",
+      status_note: "USB HID · direct mode",
       capabilities: ["rgb"],
       zones: [
         { id: "argb-1", name: "ARGB Header 1", led_count: 16 },
@@ -289,12 +289,12 @@ const DEV_PREVIEW_STATE: BootstrapState = {
     },
     {
       id: "asgard-ddr4-smbus",
-      name: "ENE DRAM RGB",
+      name: "DRAM RGB",
       kind: "ram",
       transport: "pawn_io_smbus",
       vid_pid: "1022:790B",
       connected: true,
-      status_note: "PawnIO 2.0.0 ready",
+      status_note: "SMBus · 2 DIMMs",
       capabilities: ["rgb"],
       zones: [
         { id: "dimm-1", name: "DIMM 1", led_count: 8 },
@@ -304,7 +304,7 @@ const DEV_PREVIEW_STATE: BootstrapState = {
     },
     {
       id: "aula-f75-he",
-      name: "Aula F75 HE",
+      name: "RGB Keyboard",
       kind: "keyboard",
       transport: "usb_hid",
       vid_pid: "38A6:2729",
@@ -316,7 +316,7 @@ const DEV_PREVIEW_STATE: BootstrapState = {
     },
     {
       id: "rapoo-vt-24ae-14a1",
-      name: "Rapoo Wireless Mouse",
+      name: "Wireless Mouse",
       kind: "mouse",
       transport: "usb_hid",
       vid_pid: "24AE:14A1",
@@ -328,7 +328,7 @@ const DEV_PREVIEW_STATE: BootstrapState = {
     },
     {
       id: "mchose-v9-pro-2",
-      name: "MCHOSE V9 Pro 2",
+      name: "Wireless Headset",
       kind: "headset",
       transport: "usb_hid",
       vid_pid: "3837:6011",

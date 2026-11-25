@@ -1,6 +1,6 @@
 # Hardware Probe Report (Captured via `hid-probe`)
 
-Captured on target Windows machine (`ASUS TUF GAMING A520M-PLUS II`, `AMD Ryzen 5 5500`, `Asgard DDR4-3200 2x8GB`).
+Descriptors captured on the test machine. They document the protocols the drivers speak; your device may expose different interfaces.
 
 ## 1. ASUS Aura USB Controller (`0B05:19AF`)
 - **Interface**: `iface=2`, `usage_page=0xFF72`, `usage=0x00A1`

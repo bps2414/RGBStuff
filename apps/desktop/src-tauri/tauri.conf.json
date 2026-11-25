@@ -24,7 +24,7 @@
     "copyright": "MIT License",
     "category": "Utility",
     "shortDescription": "Lightweight RGB and peripheral controller for Windows",
-    "longDescription": "RGBStuff controls RGB lighting (ASUS Aura ARGB, ENE DRAM, Aula F75 HE) and reads peripheral battery from a tiny Rust engine with a Windows 11 UI that lives in the tray.",
+    "longDescription": "RGBStuff drives motherboard ARGB, RAM and keyboard lighting from one 2D light canvas and shows peripheral battery, from a tiny Rust engine with a Windows 11 UI that lives in the tray.",
     "icon": [
       "icons/32x32.png",
       "icons/64x64.png",
