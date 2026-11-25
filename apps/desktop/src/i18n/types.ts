@@ -154,5 +154,18 @@ export interface TranslationDictionary {
     quitDesc: string;
     shortcuts: string;
     shortcutsDesc: string;
+    trayBattery: string;
+    trayBatteryDesc: string;
+    noBatteryDevices: string;
+    updates: string;
+    autoUpdate: string;
+    autoUpdateDesc: string;
+    checkNow: string;
+    checking: string;
+    upToDate: string;
+    updateAvailable: string;
+    installUpdate: string;
+    installing: string;
+    updateError: string;
   };
 }

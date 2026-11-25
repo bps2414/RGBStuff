@@ -81,6 +81,14 @@ export type CloseAction = "tray" | "quit";
 export interface UiPrefs {
   close_action: CloseAction;
   tray_hint_shown: boolean;
+  /** Devices whose battery shows in the tray right-click menu. */
+  tray_battery_devices: string[];
+  auto_update_check: boolean;
+}
+
+export interface UpdateInfo {
+  version: string;
+  notes: string | null;
 }
 
 export interface AppConfig {
@@ -140,6 +148,7 @@ export interface BootstrapState {
   night_mode_active: boolean;
   output_brightness: number;
   app_version: string;
+  available_update: UpdateInfo | null;
 }
 
 export interface HubImportResponse {
@@ -264,13 +273,14 @@ const DEV_PREVIEW_STATE: BootstrapState = {
       ],
     },
     imported_hub_presets: [],
-    ui: { close_action: "tray", tray_hint_shown: false },
+    ui: { close_action: "tray", tray_hint_shown: false, tray_battery_devices: [], auto_update_check: true },
   },
   engine_status: { mode: "static_zero_cpu" },
   active_rule_app: null,
   night_mode_active: false,
   output_brightness: 100,
   app_version: "dev",
+  available_update: null,
   devices: [
     {
       id: "asus-aura-0b05-19af",
@@ -428,6 +438,18 @@ export async function apiUpdateUiPrefs(prefs: UiPrefs): Promise<BootstrapState> 
 export async function onStateChanged(fn: (state: BootstrapState) => void): Promise<() => void> {
   if (!isTauriRuntime()) return () => {};
   return getCurrentWebviewWindow().listen<BootstrapState>("rgb://state", (e) => fn(e.payload));
+}
+
+/** Asks GitHub Releases for a newer version (null = up to date). */
+export async function apiCheckForUpdate(): Promise<UpdateInfo | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke<UpdateInfo | null>("check_for_update");
+}
+
+/** Downloads and runs the signed installer; the app closes and restarts. */
+export async function apiInstallUpdate(): Promise<void> {
+  if (!isTauriRuntime()) return;
+  await invoke("install_update");
 }
 
 export async function apiQuitApp(): Promise<void> {

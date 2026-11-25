@@ -32,8 +32,10 @@ impl LightingEngine {
     pub fn new() -> Self {
         let mut pacer = BusFramePacer::new();
         pacer.configure_hz("asus-aura-0b05-19af", 60);
-        pacer.configure_hz("aula-f75-he", 30);
-        pacer.configure_hz("asgard-ddr4-smbus", 15);
+        // Upper bounds only: each device writes on its own output thread and
+        // always takes the newest frame, so a slower bus just drops frames.
+        pacer.configure_hz("aula-f75-he", 60);
+        pacer.configure_hz("asgard-ddr4-smbus", 30);
         Self {
             canvas: Canvas2D::default(),
             pacer,

@@ -399,20 +399,37 @@ fn render_ambilight(
         Some((sw, sh, data)) if sw > 1 && sh > 1 && data.len() >= sw * sh * 3 => {
             build_ambient_target(canvas, params, sw, sh, data, state);
         }
-        // Capture not ready yet (or protected content): a calm aurora instead of black.
-        _ => render_aurora(canvas, params, input.time_secs * 0.5),
+        // Capture not ready yet (or lost for a moment): hold the current colors.
+        // Never fall back to an animated effect, the LEDs would drift on their own.
+        _ => {
+            for (s, px) in state.ambient.iter().zip(canvas.pixels.iter_mut()) {
+                *px = s.round().clamp(0.0, 255.0) as u8;
+            }
+        }
     }
 
-    // Temporal smoothing. Speed slider = responsiveness (~500 ms → ~40 ms).
-    // Brightening reacts a bit faster than fading so flashes still land.
-    let tau = 0.04 + 0.46 * (1.0 - params.speed.clamp(1, 100) as f32 / 100.0);
-    let a_up = 1.0 - (-dt / (tau * 0.6)).exp();
-    let a_down = 1.0 - (-dt / tau).exp();
-    for (s, px) in state.ambient.iter_mut().zip(canvas.pixels.iter_mut()) {
-        let target = *px as f32;
-        let a = if target > *s { a_up } else { a_down };
-        *s += (target - *s) * a;
-        *px = s.round().clamp(0.0, 255.0) as u8;
+    // Temporal smoothing, per LED so the color travels in a straight line.
+    // Speed slider = base time constant (~350 ms → ~30 ms). The constant shrinks
+    // with the size of the change: a scene cut lands in a few frames (fast but
+    // still a fade), while small flicker from text, cursors or video noise is
+    // averaged out.
+    let tau = 0.03 + 0.32 * (1.0 - params.speed.clamp(1, 100) as f32 / 100.0);
+    for (s, px) in state
+        .ambient
+        .chunks_exact_mut(3)
+        .zip(canvas.pixels.chunks_exact_mut(3))
+    {
+        let target = [px[0] as f32, px[1] as f32, px[2] as f32];
+        let diff = (target[0] - s[0])
+            .abs()
+            .max((target[1] - s[1]).abs())
+            .max((target[2] - s[2]).abs());
+        let tau_eff = tau / (1.0 + diff / 48.0);
+        let a = 1.0 - (-dt / tau_eff).exp();
+        for c in 0..3 {
+            s[c] += (target[c] - s[c]) * a;
+            px[c] = s[c].round().clamp(0.0, 255.0) as u8;
+        }
     }
 }
 
@@ -475,8 +492,13 @@ fn build_ambient_target(
     }
 
     // 3. Dominant color: vivid and bright regions outweigh grey UI and text.
+    //    How much of the screen is actually vivid decides how much it may tint
+    //    the whole setup: a few small colored icons on a dark window must not
+    //    paint everything (and flip it whenever they change).
     let mut acc = [0.0f32; 3];
     let mut wsum = 0.0f32;
+    let mut vivid = 0.0f32;
+    let mut mean_max = 0.0f32;
     for y in top..bottom {
         for x in left..right {
             let i = (y * sw + x) * 3;
@@ -488,20 +510,34 @@ fn build_ambient_target(
             let max = c[0].max(c[1]).max(c[2]);
             let min = c[0].min(c[1]).min(c[2]);
             let sat = if max > 0.0 { (max - min) / max } else { 0.0 };
-            let w = 0.02 * max + sat * sat * max * 4.0;
+            let v = sat * sat * max;
+            let w = 0.02 * max + v * 4.0;
             acc = [acc[0] + c[0] * w, acc[1] + c[1] * w, acc[2] + c[2] * w];
             wsum += w;
+            vivid += v;
+            mean_max += max;
         }
     }
+    let area = (cw * ch).max(1) as f32;
+    let coverage = vivid / area;
+    mean_max /= area;
     let dominant = if wsum > 1e-4 {
-        [acc[0] / wsum, acc[1] / wsum, acc[2] / wsum]
+        let d = [acc[0] / wsum, acc[1] / wsum, acc[2] / wsum];
+        // Keep its hue, but never brighter than the screen really is.
+        let dmax = d[0].max(d[1]).max(d[2]);
+        if dmax > 1e-4 {
+            scale3(d, (mean_max.max(dmax * 0.35) / dmax).min(1.0))
+        } else {
+            d
+        }
     } else {
         [0.0; 3]
     };
 
     // 4. Map onto the canvas. Scale slider: low = spatial detail per device,
     //    high = whole setup unified on the dominant color.
-    let unify = (params.scale as f32 / 200.0 * 0.7).clamp(0.05, 0.7);
+    let unify =
+        (params.scale as f32 / 200.0 * 0.7).clamp(0.05, 0.7) * smoothstep(0.01, 0.10, coverage);
     let cwf = (canvas.width.max(1)) as f32;
     let chf = (canvas.height.max(1)) as f32;
     for y in 0..canvas.height {
@@ -566,8 +602,12 @@ fn enhance_ambient(c: [f32; 3]) -> Rgb {
     }
     let min = c[0].min(c[1]).min(c[2]);
     let sat = (max - min) / max;
-    let value = max.powf(VALUE_GAMMA);
-    let new_sat = (sat * SATURATION_GAIN).min(1.0);
+    // Soft knee into black, so near-black UI does not glow grey.
+    let value = max.powf(VALUE_GAMMA) * smoothstep(BLACK_FLOOR, 0.09, max);
+    // The hue of near-black pixels is noise (a #0b0b10 background reads as
+    // "33% blue"); only boost saturation where there is real color to boost.
+    let trust = smoothstep(0.04, 0.22, max);
+    let new_sat = (sat * trust * (1.0 + (SATURATION_GAIN - 1.0) * trust)).min(1.0);
 
     // (max - ch) / (max - min) is 0 for the dominant channel and 1 for the weakest,
     // so rebuilding from it preserves hue.

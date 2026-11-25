@@ -152,6 +152,10 @@ pub struct UiPrefs {
     pub close_action: CloseAction,
     /// The "still running in the tray" notice is shown only once.
     pub tray_hint_shown: bool,
+    /// Devices whose battery level is listed in the tray right-click menu.
+    pub tray_battery_devices: Vec<String>,
+    /// Look for a new release on startup and every few hours.
+    pub auto_update_check: bool,
 }
 
 impl Default for UiPrefs {
@@ -159,6 +163,8 @@ impl Default for UiPrefs {
         Self {
             close_action: CloseAction::Tray,
             tray_hint_shown: false,
+            tray_battery_devices: Vec::new(),
+            auto_update_check: true,
         }
     }
 }

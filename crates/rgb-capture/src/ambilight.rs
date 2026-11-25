@@ -380,7 +380,7 @@ fn run_capture_loop(latest: Arc<Mutex<Option<Vec<u8>>>>, stop_flag: Arc<AtomicBo
         while !stop_flag.load(Ordering::Acquire) {
             match capture_one_frame(&mut session, &latest) {
                 Ok(()) => {
-                    sleep_interruptible(&stop_flag, Duration::from_millis(16));
+                    sleep_interruptible(&stop_flag, Duration::from_millis(8));
                 }
                 Err(err) if err.code() == DXGI_ERROR_WAIT_TIMEOUT => {}
                 Err(err)

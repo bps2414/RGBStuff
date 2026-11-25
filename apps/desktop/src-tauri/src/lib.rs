@@ -11,7 +11,7 @@ use rgb_engine::{EngineStatus, LightingEngine};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::ipc::{Channel, InvokeResponseBody};
@@ -24,6 +24,7 @@ use tauri::{
 use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_positioner::{Position, WindowExt};
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 const POPOVER_LABEL: &str = "tray-popover";
 const STUDIO_LABEL: &str = "studio";
@@ -51,7 +52,21 @@ pub struct BootstrapState {
     /// What actually reaches the LEDs: global x profile, capped by night mode.
     pub output_brightness: u8,
     pub app_version: String,
+    /// A newer release found by the updater, if any.
+    pub available_update: Option<UpdateInfo>,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct UpdateInfo {
+    pub version: String,
+    pub notes: Option<String>,
+}
+
+/// The update found by the last check, ready to download and install.
+struct PendingUpdate(Mutex<Option<Update>>);
+
+const UPDATE_CHECK_DELAY: Duration = Duration::from_secs(15);
+const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 
 #[derive(Debug, Clone, Serialize)]
 pub struct HubImportResponse {
@@ -82,6 +97,7 @@ struct CoreRuntime {
     active_rule_app: Option<String>,
     night_mode_active: bool,
     battery_alert_levels: HashMap<String, BatteryAlertLevel>,
+    available_update: Option<UpdateInfo>,
 }
 
 impl CoreRuntime {
@@ -103,6 +119,7 @@ impl CoreRuntime {
             night_mode_active: self.night_dimming(),
             output_brightness: LightingEngine::effective_brightness(&self.effective_config()),
             app_version: env!("CARGO_PKG_VERSION").to_string(),
+            available_update: self.available_update.clone(),
         }
     }
 
@@ -186,7 +203,7 @@ impl CoreRuntime {
             let local_pts = self.devices.local_points_for(&placement.device_id);
             if let Some(colors) =
                 self.engine
-                    .sample_for_device(&eff_cfg, placement, &local_pts, now, force_hardware)
+                    .sample_for_device(&eff_cfg, placement, local_pts, now, force_hardware)
             {
                 self.devices.apply_device_frame(&placement.device_id, &colors);
             }
@@ -544,11 +561,7 @@ fn set_locale(
         rt.config.locale = locale;
     })?;
     // Tray menu labels follow the UI language.
-    if let Some(tray) = window.app_handle().tray_by_id(TRAY_ID)
-        && let Ok(menu) = build_tray_menu(window.app_handle(), &snap.config)
-    {
-        let _ = tray.set_menu(Some(menu));
-    }
+    refresh_tray_menu(window.app_handle());
     Ok(snap)
 }
 
@@ -558,9 +571,11 @@ fn update_ui_prefs(
     window: WebviewWindow,
     state: State<'_, SharedState>,
 ) -> Result<BootstrapState, String> {
-    state.mutate_and_save(window.app_handle(), Some(window.label()), |rt| {
+    let snap = state.mutate_and_save(window.app_handle(), Some(window.label()), |rt| {
         rt.config.ui = prefs;
-    })
+    })?;
+    refresh_tray_menu(window.app_handle());
+    Ok(snap)
 }
 
 #[tauri::command(async)]
@@ -683,8 +698,52 @@ fn profile_label(locale: Locale, id: &str, fallback: &str) -> String {
     .to_string()
 }
 
-fn build_tray_menu(app: &AppHandle, config: &AppConfig) -> tauri::Result<Menu<Wry>> {
+fn build_tray_menu(
+    app: &AppHandle,
+    config: &AppConfig,
+    devices: &[DeviceSnapshot],
+    update: Option<&UpdateInfo>,
+) -> tauri::Result<Menu<Wry>> {
     let pt = matches!(config.locale, Locale::PtBr);
+
+    // Battery lines for the devices picked in Settings, in that order.
+    let battery_items = config
+        .ui
+        .tray_battery_devices
+        .iter()
+        .filter_map(|id| devices.iter().find(|d| &d.id == id))
+        .map(|dev| {
+            let tel = dev.telemetry.as_ref().filter(|t| t.connected);
+            let value = match tel.and_then(|t| t.percent.map(|p| (p, t.charging))) {
+                Some((p, true)) => format!("{p}% \u{26A1}"),
+                Some((p, false)) => format!("{p}%"),
+                None if tel.is_some() => "\u{2014}".to_string(),
+                None => (if pt { "desconectado" } else { "disconnected" }).to_string(),
+            };
+            MenuItem::with_id(
+                app,
+                format!("battery:{}", dev.id),
+                format!("\u{1F50B} {}: {}", dev.name, value),
+                true,
+                None::<&str>,
+            )
+        })
+        .collect::<tauri::Result<Vec<_>>>()?;
+    let update_item = update
+        .map(|u| {
+            MenuItem::with_id(
+                app,
+                "install_update",
+                if pt {
+                    format!("Instalar atualiza\u{e7}\u{e3}o {}", u.version)
+                } else {
+                    format!("Install update {}", u.version)
+                },
+                true,
+                None::<&str>,
+            )
+        })
+        .transpose()?;
     let open_item = MenuItem::with_id(
         app,
         "open_studio",
@@ -728,10 +787,45 @@ fn build_tray_menu(app: &AppHandle, config: &AppConfig) -> tauri::Result<Menu<Wr
     let quit_item = MenuItem::with_id(app, "quit", if pt { "Sair" } else { "Quit" }, true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    Menu::with_items(
-        app,
-        &[&open_item, &sep1, &toggle_item, &profiles, &brightness, &sep2, &quit_item],
-    )
+    let sep3 = PredefinedMenuItem::separator(app)?;
+    let mut items: Vec<&dyn IsMenuItem<Wry>> = Vec::new();
+    for b in &battery_items {
+        items.push(b);
+    }
+    if !battery_items.is_empty() {
+        items.push(&sep3);
+    }
+    items.push(&open_item);
+    if let Some(u) = &update_item {
+        items.push(u);
+    }
+    items.extend([
+        &sep1 as &dyn IsMenuItem<Wry>,
+        &toggle_item,
+        &profiles,
+        &brightness,
+        &sep2,
+        &quit_item,
+    ]);
+    Menu::with_items(app, &items)
+}
+
+/// Rebuilds the tray right-click menu. Must run without the runtime lock held:
+/// menu calls hop to the main thread, which may itself be waiting on that lock.
+fn refresh_tray_menu(app: &AppHandle) {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return;
+    };
+    let (config, devices, update) = {
+        let state = app.state::<SharedState>();
+        let Ok(rt) = state.runtime.lock() else {
+            return;
+        };
+        (rt.config.clone(), rt.devices.snapshots(), rt.available_update.clone())
+    };
+    if let Ok(menu) = build_tray_menu(app, &config, &devices, update.as_ref()) {
+        let _ = tray.set_menu(Some(menu));
+    }
 }
 
 fn handle_tray_menu(app: &AppHandle, id: &str) {
@@ -748,6 +842,12 @@ fn handle_tray_menu(app: &AppHandle, id: &str) {
             });
         }
         "quit" => quit_app(app),
+        "install_update" => {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = install_update_inner(&app).await;
+            });
+        }
         other => {
             if let Some(pid) = other.strip_prefix("profile:") {
                 let pid = pid.to_string();
@@ -774,11 +874,8 @@ fn normalize_exe_match(rule_exe: &str, active_exe: &str) -> bool {
     r == a || format!("{r}.exe") == a
 }
 
-fn update_tray_and_notifications(
-    app: &AppHandle,
-    tray: &TrayIcon,
-    rt: &mut CoreRuntime,
-) {
+/// Battery alerts; returns the tray tooltip text.
+fn battery_notifications(app: &AppHandle, rt: &mut CoreRuntime) -> String {
     let snapshots = rt.devices.snapshots();
     let mut tooltip_parts = vec!["RGBStuff".to_string()];
 
@@ -814,7 +911,106 @@ fn update_tray_and_notifications(
         }
     }
 
-    let _ = tray.set_tooltip(Some(tooltip_parts.join(" · ")));
+    tooltip_parts.join(" · ")
+}
+
+/// Asks GitHub Releases for a newer version and remembers it for the UI and tray.
+async fn check_update_inner(app: &AppHandle) -> Result<Option<UpdateInfo>, String> {
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?;
+    let info = update.as_ref().map(|u| UpdateInfo {
+        version: u.version.clone(),
+        notes: u.body.clone().filter(|b| !b.trim().is_empty()),
+    });
+    if let Ok(mut pending) = app.state::<PendingUpdate>().0.lock() {
+        *pending = update;
+    }
+
+    let state = app.state::<SharedState>();
+    let (snap, newly_found, locale) = {
+        let mut rt = state.runtime.lock().map_err(|_| "runtime lock poisoned")?;
+        let newly_found = info.is_some() && rt.available_update != info;
+        rt.available_update = info.clone();
+        (rt.snapshot(false), newly_found, rt.config.locale)
+    };
+    broadcast_state(app, &snap, None);
+    refresh_tray_menu(app);
+    if newly_found && let Some(u) = &info {
+        let body = match locale {
+            Locale::PtBr => format!(
+                "RGBStuff {} est\u{e1} dispon\u{ed}vel. Instale pelo menu da bandeja ou em Configura\u{e7}\u{f5}es.",
+                u.version
+            ),
+            Locale::EnUs => format!(
+                "RGBStuff {} is available. Install it from the tray menu or in Settings.",
+                u.version
+            ),
+        };
+        let _ = app.notification().builder().title("RGBStuff").body(body).show();
+    }
+    Ok(info)
+}
+
+/// Downloads, verifies (minisign) and runs the installer; the app exits during install.
+async fn install_update_inner(app: &AppHandle) -> Result<(), String> {
+    let pending = app
+        .state::<PendingUpdate>()
+        .0
+        .lock()
+        .ok()
+        .and_then(|mut p| p.take());
+    let update = match pending {
+        Some(u) => u,
+        None => app
+            .updater()
+            .map_err(|e| e.to_string())?
+            .check()
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("no update available")?,
+    };
+    if let Ok(mut rt) = app.state::<SharedState>().runtime.lock()
+        && rt.config_dirty_since.is_some()
+    {
+        rt.save_config();
+    }
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|e| e.to_string())?;
+    app.restart();
+}
+
+#[tauri::command]
+async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    check_update_inner(&app).await
+}
+
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    install_update_inner(&app).await
+}
+
+fn spawn_update_loop(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(UPDATE_CHECK_DELAY).await;
+        loop {
+            let enabled = app
+                .state::<SharedState>()
+                .runtime
+                .lock()
+                .map(|rt| rt.config.ui.auto_update_check)
+                .unwrap_or(false);
+            if enabled {
+                let _ = check_update_inner(&app).await;
+            }
+            tokio::time::sleep(UPDATE_CHECK_INTERVAL).await;
+        }
+    });
 }
 
 fn spawn_engine_loop(
@@ -829,17 +1025,25 @@ fn spawn_engine_loop(
         .name("rgb-engine".into())
         .spawn(move || {
             let mut last_telemetry = Instant::now();
+            // Battery polls run in the background; read their result a bit later.
+            let mut telemetry_due: Option<Instant> = Some(Instant::now());
             loop {
-                let wait = {
+                let tick_start = Instant::now();
+                let mut tooltip = None;
+                let (wait, dynamic) = {
                     let mut rt = match runtime.lock() {
                         Ok(g) => g,
                         Err(_) => break,
                     };
                     if last_telemetry.elapsed() >= Duration::from_secs(60) {
                         rt.devices.poll_telemetry();
-                        update_tray_and_notifications(&app, &tray, &mut rt);
-                        broadcast_state(&app, &rt.snapshot(false), None);
                         last_telemetry = Instant::now();
+                        telemetry_due = Some(last_telemetry + Duration::from_secs(3));
+                    }
+                    if telemetry_due.is_some_and(|t| Instant::now() >= t) {
+                        telemetry_due = None;
+                        tooltip = Some(battery_notifications(&app, &mut rt));
+                        broadcast_state(&app, &rt.snapshot(false), None);
                     }
                     if rt.engine.should_tick(&rt.config) {
                         rt.apply_tick(false);
@@ -851,22 +1055,46 @@ fn spawn_engine_loop(
                         rt.save_config();
                     }
 
-                    let mut wait = if rt.engine.should_tick(&rt.config) {
-                        DYNAMIC_TICK
+                    let dynamic = rt.engine.should_tick(&rt.config);
+                    let mut wait = if dynamic {
+                        // Fixed cadence: the tick's own work counts against the frame.
+                        DYNAMIC_TICK.saturating_sub(tick_start.elapsed())
                     } else {
                         Duration::from_secs(60)
                     };
                     if let Some(t) = rt.config_dirty_since {
                         wait = wait.min(SAVE_DEBOUNCE.saturating_sub(t.elapsed()));
                     }
-                    wait
+                    if let Some(t) = telemetry_due {
+                        wait = wait.min(t.saturating_duration_since(Instant::now()));
+                    }
+                    (wait, dynamic)
                 };
 
-                match wake_rx.recv_timeout(wait) {
-                    Ok(()) | Err(RecvTimeoutError::Timeout) => {}
-                    Err(RecvTimeoutError::Disconnected) => break,
+                if let Some(text) = tooltip {
+                    let _ = tray.set_tooltip(Some(text));
+                    refresh_tray_menu(&app);
                 }
-                while wake_rx.try_recv().is_ok() {}
+
+                if dynamic {
+                    // recv_timeout rounds up to the ~15.6 ms system timer (→ ~32 fps);
+                    // thread::sleep uses a high-resolution timer. A pending wake is
+                    // picked up on the next tick, at most one frame later.
+                    std::thread::sleep(wait);
+                    loop {
+                        match wake_rx.try_recv() {
+                            Ok(()) => continue,
+                            Err(TryRecvError::Empty) => break,
+                            Err(TryRecvError::Disconnected) => return,
+                        }
+                    }
+                } else {
+                    match wake_rx.recv_timeout(wait) {
+                        Ok(()) | Err(RecvTimeoutError::Timeout) => {}
+                        Err(RecvTimeoutError::Disconnected) => break,
+                    }
+                    while wake_rx.try_recv().is_ok() {}
+                }
             }
         });
     if let Err(e) = spawned {
@@ -990,6 +1218,7 @@ pub fn run() {
         active_rule_app: None,
         night_mode_active: false,
         battery_alert_levels: HashMap::new(),
+        available_update: None,
     }));
     let (wake_tx, wake_rx) = std::sync::mpsc::channel::<()>();
     let (watcher, auto_rx) = AutomationWatcher::start(initial_automation);
@@ -1012,6 +1241,8 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_positioner::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(PendingUpdate(Mutex::new(None)))
         .manage(SharedState {
             runtime,
             watcher,
@@ -1031,7 +1262,13 @@ pub fn run() {
                 }
                 rt.config.clone()
             };
-            let menu = build_tray_menu(&handle, &config_now)?;
+            let devices_now = handle
+                .state::<SharedState>()
+                .runtime
+                .lock()
+                .map(|rt| rt.devices.snapshots())
+                .unwrap_or_default();
+            let menu = build_tray_menu(&handle, &config_now, &devices_now, None)?;
 
             let tray = TrayIconBuilder::with_id(TRAY_ID)
                 .icon(app.default_window_icon().unwrap().clone())
@@ -1055,6 +1292,7 @@ pub fn run() {
 
             spawn_engine_loop(app.handle().clone(), tray, loop_runtime, wake_rx);
             spawn_automation_loop(app.handle().clone(), auto_runtime, auto_wake, auto_rx);
+            spawn_update_loop(app.handle().clone());
 
             let start_minimized = std::env::args().any(|a| a == "--minimized");
             if !start_minimized {
@@ -1083,6 +1321,8 @@ pub fn run() {
             window_toggle_maximize,
             window_close,
             quit_app_command,
+            check_for_update,
+            install_update,
         ])
         .build(tauri::generate_context!())
         .expect("error while building RGBStuff")
