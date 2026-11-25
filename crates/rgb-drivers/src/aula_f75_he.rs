@@ -87,6 +87,8 @@ pub struct AulaF75HeDriver {
     max_brightness: u8,
     custom_mode_active: bool,
     last_uniform: Option<Rgb>,
+    /// Uniform color streamed live but not yet committed as the hardware effect.
+    settle_color: Option<Rgb>,
     status: String,
 }
 
@@ -104,6 +106,7 @@ impl AulaF75HeDriver {
             max_brightness: 4,
             custom_mode_active: false,
             last_uniform: None,
+            settle_color: None,
             status: "Initializing".into(),
         };
         let _ = drv.reconnect();
@@ -276,12 +279,18 @@ impl RgbDevice for AulaF75HeDriver {
         let first = colors[0];
         let uniform = colors.iter().all(|&c| c == first);
 
-        let res = if uniform {
-            if self.last_uniform == Some(first) {
-                Ok(())
-            } else {
-                self.send_static_or_off(first)
-            }
+        // SET_LED_EFFECT is slow to show (the firmware applies and stores it), so
+        // a fade of uniform colors sent that way lagged far behind the other
+        // devices. Every changing frame goes through the live RAM stream; a
+        // uniform color is committed as the hardware effect only once it holds
+        // still (see `settle`), so it also survives the app closing.
+        let res = if uniform && self.last_uniform == Some(first) {
+            Ok(())
+        } else if self.report_len == 64 {
+            self.settle_color = uniform.then_some(first);
+            self.send_per_key_frame(colors)
+        } else if uniform {
+            self.send_static_or_off(first)
         } else {
             self.send_per_key_frame(colors)
         };
@@ -290,8 +299,18 @@ impl RgbDevice for AulaF75HeDriver {
             self.device = None;
             self.custom_mode_active = false;
             self.last_uniform = None;
+            self.settle_color = None;
         }
         res
+    }
+
+    fn settle(&mut self) -> Result<(), DriverError> {
+        match self.settle_color.take() {
+            Some(c) if self.device.is_some() && self.last_uniform != Some(c) => {
+                self.send_static_or_off(c)
+            }
+            _ => Ok(()),
+        }
     }
 
     fn reconnect(&mut self) -> bool {

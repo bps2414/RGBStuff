@@ -15,6 +15,9 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// How long the frames must stop before a driver may commit a persistent mode.
+const SETTLE_AFTER: std::time::Duration = std::time::Duration::from_millis(500);
+
 /// Latest-frame slot: a slow bus never builds a queue, it just skips to the newest frame.
 #[derive(Default)]
 struct Mailbox {
@@ -41,16 +44,34 @@ impl<T: RgbDevice + 'static> DeviceWorker<T> {
         let _ = std::thread::Builder::new()
             .name(format!("rgb-out-{id}"))
             .spawn(move || {
+                let mut unsettled = false;
                 loop {
                     let frame = {
                         let mut slot = lock(&mb.frame);
                         loop {
                             if let Some(f) = slot.take() {
-                                break f;
+                                break Some(f);
                             }
-                            slot = mb.ready.wait(slot).unwrap_or_else(|e| e.into_inner());
+                            if unsettled {
+                                let (s, timeout) = mb
+                                    .ready
+                                    .wait_timeout(slot, SETTLE_AFTER)
+                                    .unwrap_or_else(|e| e.into_inner());
+                                slot = s;
+                                if timeout.timed_out() && slot.is_none() {
+                                    break None;
+                                }
+                            } else {
+                                slot = mb.ready.wait(slot).unwrap_or_else(|e| e.into_inner());
+                            }
                         }
                     };
+                    let Some(frame) = frame else {
+                        unsettled = false;
+                        let _ = lock(&drv).settle();
+                        continue;
+                    };
+                    unsettled = true;
                     let failed = lock(&drv).apply_frame(&frame).is_err();
                     if failed {
                         // Unplugged or busy: drivers reconnect inside apply_frame, so

@@ -159,6 +159,12 @@ pub trait RgbDevice: Send {
         self.apply_frame(&vec![color; count])
     }
     fn reconnect(&mut self) -> bool;
+    /// Called once when no new frame arrived for a moment (the lighting is
+    /// holding still). Drivers can commit a persistent hardware mode here
+    /// instead of on every frame.
+    fn settle(&mut self) -> Result<(), DriverError> {
+        Ok(())
+    }
 }
 
 pub trait BatteryDevice: Send {
