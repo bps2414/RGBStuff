@@ -279,13 +279,15 @@ impl EneDramSmbusWriter {
             bridge.open()?;
         }
         if !self.module_loaded {
-            if let Some(module_path) = Self::find_smbus_module_path() {
-                let blob = std::fs::read(&module_path).map_err(|e| {
+            let blob = if let Some(module_path) = Self::find_smbus_module_path() {
+                std::fs::read(&module_path).map_err(|e| {
                     format!("Failed to read {}: {e}", module_path.display())
-                })?;
-                bridge.load_blob(&blob)?;
-                self.module_loaded = true;
-            }
+                })?
+            } else {
+                rgb_drivers::ene_dram_ipc::SMBUS_PIIX4_BLOB.to_vec()
+            };
+            bridge.load_blob(&blob)?;
+            self.module_loaded = true;
         }
         Ok(())
     }

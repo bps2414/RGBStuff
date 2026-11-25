@@ -25,6 +25,14 @@ directories = "6.0"
 tokio = { version = "1.44", features = ["rt-multi-thread", "sync", "time", "macros", "net"] }
 hidapi = "2.6"
 libloading = "0.8"
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+] }
 rgb-core = { path = "crates/rgb-core" }
 rgb-engine = { path = "crates/rgb-engine" }
 rgb-drivers = { path = "crates/rgb-drivers" }

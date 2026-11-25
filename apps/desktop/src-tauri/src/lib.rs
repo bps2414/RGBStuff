@@ -733,6 +733,11 @@ pub fn run() {
             spawn_engine_loop(app.handle().clone(), tray, loop_runtime, loop_wake);
             spawn_automation_loop(auto_runtime, auto_wake, auto_rx);
 
+            let start_minimized = std::env::args().any(|a| a == "--minimized");
+            if !start_minimized {
+                let _ = open_or_focus_studio(app.handle());
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

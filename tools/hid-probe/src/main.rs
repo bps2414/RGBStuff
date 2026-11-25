@@ -1,6 +1,11 @@
 use hidapi::{HidApi, HidDevice};
 use libloading::{Library, Symbol};
-use rgb_core::Rgb;
+use rgb_core::{Rgb, RgbDevice};
+use rgb_drivers::aula_f75_he::{
+    AULA_PID, AULA_USAGE_PAGE_PRIMARY, AULA_VID, AulaF75HeDriver, HFD_CMD_GET_DEVICE_INFO,
+    HFD_CMD_GET_LED_EFFECT, build_hfd_packet,
+};
+use rgb_drivers::ene_dram_ipc::PawnIoSmbusSession;
 use std::env;
 use std::process;
 
@@ -20,9 +25,13 @@ fn print_usage() {
 Commands:
   list [--all]          List target HID devices (or all HID devices with --all)
   aura-info             Query ASUS Aura 0B05:19AF firmware & config table (read-only)
-  aura-color <RRGGBB>   Send safe static/direct color test to 0B05:19AF
+  aura-color <RRGGBB>   Send safe Direct Mode color test to 0B05:19AF
+  ram-scan              Safe read-only PawnIO SmbusPIIX4 scan across ENE whitelist 0x70..=0x77
+  ram-color <RRGGBB>    Test ENE DRAM direct color write on detected Asgard RAM sticks
+  aula-info             Query Aula F75 HE (38A6:2729) HFD device info & current LED effect
+  aula-color <RRGGBB>   Test Aula F75 HE HFD color write
   pawnio-check          Dynamically load PawnIOLib.dll and check version + open handle
-  probe-peripherals     Read-only HID descriptor/interface check for Aula, Rapoo & MCHOSE"
+  probe-peripherals     Read-only HID interface check for Aula, Rapoo & MCHOSE"
     );
 }
 
@@ -70,10 +79,6 @@ fn open_aura_device(api: &HidApi) -> Result<HidDevice, String> {
             api.device_list()
                 .find(|d| d.vendor_id() == AURA_VID && d.product_id() == AURA_PID && d.usage_page() >= 0xFF00)
         })
-        .or_else(|| {
-            api.device_list()
-                .find(|d| d.vendor_id() == AURA_VID && d.product_id() == AURA_PID)
-        })
         .ok_or_else(|| "ASUS Aura 0B05:19AF not found".to_string())?;
 
     println!(
@@ -119,8 +124,7 @@ fn cmd_aura_info() -> Result<(), String> {
     let dev = open_aura_device(&api)?;
 
     let fw = aura_query(&dev, 0x82)?;
-    let fw_bytes = &fw[2..18];
-    let fw_str: String = fw_bytes
+    let fw_str: String = fw[2..18]
         .iter()
         .take_while(|&&b| b != 0)
         .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' })
@@ -130,12 +134,6 @@ fn cmd_aura_info() -> Result<(), String> {
 
     let cfg = aura_query(&dev, 0xB0)?;
     println!("Config table (65B): {}", format_hex(&cfg[..48]));
-    println!(
-        "Parsed guess -> effect_channels={} addressable_headers={} onboard_leds={}",
-        cfg.get(4).copied().unwrap_or(0),
-        cfg.get(6).copied().unwrap_or(0),
-        cfg.get(28).copied().unwrap_or(0),
-    );
     Ok(())
 }
 
@@ -145,26 +143,22 @@ fn cmd_aura_color(hex: &str) -> Result<(), String> {
     let dev = open_aura_device(&api)?;
     drain_stale(&dev);
 
-    // Switch channel 0..2 to Direct Mode (0xEC 0x35: channel, effect=0xFF direct)
-    for ch in 0u8..3u8 {
+    for ch in 0u8..2u8 {
         let mut mode_pkt = [0u8; 65];
         mode_pkt[0] = 0xEC;
         mode_pkt[1] = 0x35;
         mode_pkt[2] = ch;
-        mode_pkt[3] = 0x00;
-        mode_pkt[4] = 0x00;
-        mode_pkt[5] = 0xFF; // Direct mode
+        mode_pkt[5] = 0xFF;
         let _ = dev.write(&mode_pkt);
     }
 
-    // Send Direct Mode frame (0xEC 0x40: channel=0, offset=0, count=20)
     for ch in 0u8..2u8 {
         let mut pkt = [0u8; 65];
         pkt[0] = 0xEC;
         pkt[1] = 0x40;
-        pkt[2] = 0x80 | ch; // Apply bit + channel
-        pkt[3] = 0x00; // start LED index
-        pkt[4] = 20; // LED count in packet (20 * 3 = 60 bytes)
+        pkt[2] = 0x80 | ch;
+        pkt[3] = 0x00;
+        pkt[4] = 20;
         for i in 0..20 {
             let base = 5 + i * 3;
             pkt[base] = rgb.r;
@@ -179,11 +173,149 @@ fn cmd_aura_color(hex: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn cmd_ram_scan() -> Result<(), String> {
+    let session = PawnIoSmbusSession::open()?;
+    println!(
+        "PawnIO SmbusPIIX4 loaded! DLL version {}.{}.{}",
+        session.version.0, session.version.1, session.version.2
+    );
+    match session.identity() {
+        Ok((id, base, pci)) => println!(
+            "SMBus Identity: id=0x{id:X} io_base=0x{base:X} pci_ids=0x{pci:016X}"
+        ),
+        Err(e) => println!("ioctl_identity warning: {e}"),
+    }
+
+    let dimms = session.probe_ene_dimms();
+    if dimms.is_empty() {
+        println!("No ENE DRAM modules detected in whitelist 0x70..=0x77 (ports 0..1).");
+        // Print raw first 4 bytes at 0x1000 for 0x70..=0x77 on port 0 to aid diagnosis
+        println!("Raw read-only probe of 0x70..=0x77 @ reg 0x1000..0x1004:");
+        for addr in 0x70u8..=0x77u8 {
+            let mut vals = Vec::new();
+            for off in 0u16..4u16 {
+                match session.ene_register_read(addr, 0x1000 + off) {
+                    Ok(b) => vals.push(format!("{b:02X}")),
+                    Err(_) => vals.push("--".into()),
+                }
+            }
+            println!("  0x{addr:02X}: {}", vals.join(" "));
+        }
+    } else {
+        println!("Detected {} ENE DRAM module(s):", dimms.len());
+        for d in &dimms {
+            println!(
+                "  port={} addr=0x{:02X} name={:?} led_count={}",
+                d.port, d.addr, d.device_name, d.led_count
+            );
+        }
+    }
+    Ok(())
+}
+
+fn cmd_ram_color(hex: &str) -> Result<(), String> {
+    let rgb = Rgb::from_hex(hex).map_err(|e| e.to_string())?;
+    let session = PawnIoSmbusSession::open()?;
+    let mut dimms = session.probe_ene_dimms();
+    if dimms.is_empty() {
+        return Err("No ENE DRAM modules found in 0x70..=0x77".into());
+    }
+    for dimm in &mut dimms {
+        let frame = vec![rgb; dimm.led_count];
+        session.write_dimm_direct(dimm, &frame)?;
+        println!(
+            "Applied {} to ENE DRAM 0x{:02X} ({}, {} LEDs)",
+            rgb.to_hex(),
+            dimm.addr,
+            dimm.device_name,
+            dimm.led_count
+        );
+    }
+    Ok(())
+}
+
+fn cmd_aula_info() -> Result<(), String> {
+    let api = HidApi::new().map_err(|e| format!("HidApi::new failed: {e}"))?;
+    let info = api
+        .device_list()
+        .find(|d| {
+            d.vendor_id() == AULA_VID
+                && d.product_id() == AULA_PID
+                && d.usage_page() == AULA_USAGE_PAGE_PRIMARY
+        })
+        .ok_or_else(|| "Aula F75 HE (38A6:2729, 0xFF68) not found".to_string())?;
+    let dev = info
+        .open_device(&api)
+        .map_err(|e| format!("open Aula failed: {e}"))?;
+    drain_stale(&dev);
+
+    for report_len in [64usize, 32usize] {
+        println!("Testing HFD report_len={report_len}...");
+        let pkt_info = build_hfd_packet(report_len, HFD_CMD_GET_DEVICE_INFO, 0, &[], 0, true);
+        if let Ok(written) = dev.write(&pkt_info) {
+            let mut resp = [0u8; 65];
+            match dev.read_timeout(&mut resp, 200) {
+                Ok(n) if n > 0 => {
+                    println!(
+                        "  GET_DEVICE_INFO (wrote {written}B, read {n}B): {}",
+                        format_hex(&resp[..n.min(32)])
+                    );
+                }
+                Ok(_) => println!("  GET_DEVICE_INFO timeout (wrote {written}B)"),
+                Err(e) => println!("  GET_DEVICE_INFO read err: {e}"),
+            }
+        } else {
+            println!("  write({}B) rejected by HID driver", report_len + 1);
+            continue;
+        }
+
+        let pkt_eff = build_hfd_packet(report_len, HFD_CMD_GET_LED_EFFECT, 0, &[], 0, true);
+        if let Ok(written) = dev.write(&pkt_eff) {
+            let mut resp = [0u8; 65];
+            match dev.read_timeout(&mut resp, 200) {
+                Ok(n) if n > 0 => {
+                    println!(
+                        "  GET_LED_EFFECT (wrote {written}B, read {n}B): {}",
+                        format_hex(&resp[..n.min(28)])
+                    );
+                    let off = if resp[0] == 0x55 { 0 } else { 1 };
+                    if n >= off + 20 {
+                        println!(
+                            "  Parsed -> mode={} rgb=({},{},{}) colorMode={} brightness={} speed={} dir={}",
+                            resp[off + 8],
+                            resp[off + 9],
+                            resp[off + 10],
+                            resp[off + 11],
+                            resp[off + 16],
+                            resp[off + 17],
+                            resp[off + 18],
+                            resp[off + 19],
+                        );
+                    }
+                    return Ok(());
+                }
+                Ok(_) => println!("  GET_LED_EFFECT timeout (wrote {written}B)"),
+                Err(e) => println!("  GET_LED_EFFECT read err: {e}"),
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cmd_aula_color(hex: &str) -> Result<(), String> {
+    let rgb = Rgb::from_hex(hex).map_err(|e| e.to_string())?;
+    let mut drv = AulaF75HeDriver::new();
+    println!("Aula driver status: {}", drv.status_note());
+    drv.apply_frame(&vec![rgb; 80])
+        .map_err(|e| e.to_string())?;
+    println!("Sent color {} to Aula F75 HE!", rgb.to_hex());
+    Ok(())
+}
+
 fn cmd_pawnio_check() -> Result<(), String> {
     let dll_path = r"C:\Program Files\PawnIO\PawnIOLib.dll";
     unsafe {
-        let lib = Library::new(dll_path)
-            .map_err(|e| format!("Failed to load {dll_path}: {e}"))?;
+        let lib = Library::new(dll_path).map_err(|e| format!("Failed to load {dll_path}: {e}"))?;
 
         type PawnIoVersionFn = unsafe extern "system" fn(*mut u32) -> i32;
         type PawnIoOpenFn = unsafe extern "system" fn(*mut isize) -> i32;
@@ -215,9 +347,7 @@ fn cmd_pawnio_check() -> Result<(), String> {
             println!("pawnio_open succeeded (handle=0x{handle:X}) -> driver access available in current context");
             let _ = close_fn(handle);
         } else {
-            println!(
-                "pawnio_open returned HRESULT 0x{open_hr:08X} (expected without Admin; elevated rgbstuff-smbus-svc handles this)"
-            );
+            println!("pawnio_open returned HRESULT 0x{open_hr:08X}");
         }
     }
     Ok(())
@@ -262,6 +392,16 @@ fn main() {
         Some("aura-info") => cmd_aura_info(),
         Some("aura-color") => match args.get(2) {
             Some(hex) => cmd_aura_color(hex),
+            None => Err("missing <RRGGBB> argument".to_string()),
+        },
+        Some("ram-scan") => cmd_ram_scan(),
+        Some("ram-color") => match args.get(2) {
+            Some(hex) => cmd_ram_color(hex),
+            None => Err("missing <RRGGBB> argument".to_string()),
+        },
+        Some("aula-info") => cmd_aula_info(),
+        Some("aula-color") => match args.get(2) {
+            Some(hex) => cmd_aula_color(hex),
             None => Err("missing <RRGGBB> argument".to_string()),
         },
         Some("pawnio-check") => cmd_pawnio_check(),

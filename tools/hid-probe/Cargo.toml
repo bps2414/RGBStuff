@@ -8,3 +8,4 @@ license.workspace = true
 hidapi.workspace = true
 libloading.workspace = true
 rgb-core.workspace = true
+rgb-drivers.workspace = true

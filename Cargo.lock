@@ -1556,6 +1556,7 @@ dependencies = [
  "hidapi",
  "libloading 0.8.9",
  "rgb-core",
+ "rgb-drivers",
 ]
 
 [[package]]
@@ -3320,6 +3321,7 @@ dependencies = [
  "hidapi",
  "libloading 0.8.9",
  "rgb-core",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

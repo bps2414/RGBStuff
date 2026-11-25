@@ -16,13 +16,16 @@ Captured on target Windows machine (`ASUS TUF GAMING A520M-PLUS II`, `AMD Ryzen 
 ## 2. PawnIO Kernel Bridge (`Asgard DDR4-3200` via AMD SMBus `1022:790B`)
 - **DLL**: `C:\Program Files\PawnIO\PawnIOLib.dll`
 - **Loaded Version**: `2.0.0` (`0x00020000`)
-- **`pawnio_open` test**: Succeeded (`handle=0xC8`)
-- **Safety Guard**: Whitelist `0x70..=0x77` enforced in `rgb_drivers::smbus_safety`; SPD range `0x50..=0x57` strictly blocked.
+- **Signed Module**: `SmbusPIIX4.bin` (`namazso/PawnIO.Modules` v0.2.12, embedded in `crates/rgb-drivers/assets/SmbusPIIX4.bin`)
+- **SMBus Identity**: `PIIX4`, `io_base=0x0B00`, `pci_ids=0x87E11043790B1022`
+- **Detected ENE DRAM**: Address **`0x77`**, Device Name prefix **`AUDA`** (Gen 2 ENE DRAM -> `ENE_REG_COLORS_DIRECT_V2 = 0x8100`, `[R, B, G]` byte order)
+- **Safety Guard**: Whitelist `0x70..=0x77` enforced in `rgb_drivers::smbus_safety`; SPD range `0x50..=0x57` strictly blocked; guarded by `Global\Access_SMBUS.HTP.Method`.
 
 ## 3. Peripherals (USB HID)
 
 ### Aula F75 HE (`38A6:2729`, `AULA F75 HE`)
-- `iface=2`, `usage_page=0xFF68`, `usage=0x0061` (`open_ok=true`) — Primary vendor config/RGB interface
+- `iface=2`, `usage_page=0xFF68`, `usage=0x0061` (`open_ok=true`) — Primary HFD SDK RGB interface (`report_len=64`, Windows write buffer `65B` with Report ID `0x00`, magic header `0xAA`, response `0x55`)
+- Verified `GET_LED_EFFECT (0x13)`: `brightness` scale `0..=5`, `SET_LED_EFFECT (0x23)` for static/off (`mode=1`/`mode=0`), `GET_LED_DATA (0x32)` for live 512B per-key RAM streaming.
 - `iface=3`, `usage_page=0xFF67`, `usage=0x0061` (`open_ok=true`) — Secondary vendor interface
 
 ### Rapoo Wireless Mouse (`24AE:14A1`, `Rapoo Gaming Device`)
