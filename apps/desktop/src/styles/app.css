@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --surface-canvas: rgba(11, 11, 14, 0.78);
+  --surface-panel: rgba(20, 20, 25, 0.72);
+  --surface-elevated: rgba(28, 28, 34, 0.82);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --text-primary: #f4f4f5;
+  --text-muted: #a1a1aa;
+  --accent: #38bdf8;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.studio-shell {
+  background: var(--surface-canvas);
+  backdrop-filter: blur(24px) saturate(140%);
+}
+
+.studio-panel {
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+}
+
+.studio-card {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-subtle);
+  transition: transform 140ms ease-out, border-color 140ms ease-out, background-color 140ms ease-out;
+}
+
+.studio-card:hover {
+  border-color: var(--border-strong);
+}
+
+.studio-btn {
+  transition: transform 120ms ease-out, background-color 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out;
+}
+
+.studio-btn:active {
+  transform: scale(0.98);
+}
+
+/* Minimal custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}

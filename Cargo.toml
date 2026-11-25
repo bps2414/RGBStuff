@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rgb-core",
+    "crates/rgb-engine",
+    "crates/rgb-drivers",
+    "crates/rgb-capture",
+    "crates/rgb-automation",
+    "crates/rgb-smbus-svc",
+    "tools/hid-probe",
+    "apps/desktop/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+thiserror = "2.0"
+directories = "6.0"
+tokio = { version = "1.44", features = ["rt-multi-thread", "sync", "time", "macros", "net"] }
+hidapi = "2.6"
+libloading = "0.8"
+rgb-core = { path = "crates/rgb-core" }
+rgb-engine = { path = "crates/rgb-engine" }
+rgb-drivers = { path = "crates/rgb-drivers" }
+rgb-capture = { path = "crates/rgb-capture" }
+rgb-automation = { path = "crates/rgb-automation" }

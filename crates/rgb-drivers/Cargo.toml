@@ -1,0 +1,10 @@
+[package]
+name = "rgb-drivers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rgb-core.workspace = true
+hidapi.workspace = true
+libloading.workspace = true
