@@ -5,7 +5,7 @@ use crate::mchose_v9::MchoseV9Driver;
 use crate::rapoo_hid::RapooHidDriver;
 use rgb_core::{
     BatteryDevice, BatteryTelemetry, DeviceCapability, DeviceKind, DeviceSnapshot,
-    DeviceTransport, LedPoint, Rgb, RgbDevice,
+    DeviceTransport, HardwareEffect, LedPoint, Rgb, RgbDevice,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,10 +18,15 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 /// How long the frames must stop before a driver may commit a persistent mode.
 const SETTLE_AFTER: std::time::Duration = std::time::Duration::from_millis(500);
 
-/// Latest-frame slot: a slow bus never builds a queue, it just skips to the newest frame.
+enum Job {
+    Frame(Vec<Rgb>),
+    Hardware(HardwareEffect),
+}
+
+/// Latest-job slot: a slow bus never builds a queue, it just skips to the newest frame.
 #[derive(Default)]
 struct Mailbox {
-    frame: Mutex<Option<Vec<Rgb>>>,
+    frame: Mutex<Option<Job>>,
     ready: Condvar,
 }
 
@@ -66,13 +71,21 @@ impl<T: RgbDevice + 'static> DeviceWorker<T> {
                             }
                         }
                     };
-                    let Some(frame) = frame else {
-                        unsettled = false;
-                        let _ = lock(&drv).settle();
-                        continue;
+                    let failed = match frame {
+                        None => {
+                            unsettled = false;
+                            let _ = lock(&drv).settle();
+                            continue;
+                        }
+                        Some(Job::Hardware(fx)) => {
+                            unsettled = false;
+                            lock(&drv).apply_hardware_effect(&fx).is_err()
+                        }
+                        Some(Job::Frame(frame)) => {
+                            unsettled = true;
+                            lock(&drv).apply_frame(&frame).is_err()
+                        }
                     };
-                    unsettled = true;
-                    let failed = lock(&drv).apply_frame(&frame).is_err();
                     if failed {
                         // Unplugged or busy: drivers reconnect inside apply_frame, so
                         // retrying every frame would enumerate HID 60 times a second.
@@ -89,7 +102,11 @@ impl<T: RgbDevice + 'static> DeviceWorker<T> {
     }
 
     fn submit(&self, colors: &[Rgb]) {
-        *lock(&self.mailbox.frame) = Some(colors.to_vec());
+        self.post(Job::Frame(colors.to_vec()));
+    }
+
+    fn post(&self, job: Job) {
+        *lock(&self.mailbox.frame) = Some(job);
         self.mailbox.ready.notify_one();
     }
 
@@ -250,6 +267,13 @@ impl DeviceManager {
             id if id == self.ram.id => self.ram.submit(colors),
             id if id == self.aula.id => self.aula.submit(colors),
             _ => {}
+        }
+    }
+
+    /// Hands a device over to its firmware animation (keyboard only today).
+    pub fn apply_device_hardware_effect(&mut self, device_id: &str, fx: HardwareEffect) {
+        if device_id == self.aula.id {
+            self.aula.post(Job::Hardware(fx));
         }
     }
 

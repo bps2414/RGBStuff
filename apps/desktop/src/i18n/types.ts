@@ -11,6 +11,19 @@ export type EffectKind =
   | "aurora"
   | "plasma"
   | "ripple"
+  | "color_cycle"
+  | "comet"
+  | "snowfall"
+  | "rain"
+  | "fire"
+  | "windmill"
+  | "gathering"
+  | "fountain"
+  | "bloom"
+  | "mountains"
+  | "neon"
+  | "cross"
+  | "cpu_load"
   | "ambilight"
   | "audio_spectrum";
 
@@ -67,6 +80,21 @@ export interface TranslationDictionary {
     unify: string;
     noParams: string;
     items: Record<EffectKind, { name: string; description: string }>;
+    groups: { classic: string; motion: string; nature: string; reactive: string };
+    keyboard: {
+      title: string;
+      desc: string;
+      followCanvas: string;
+      followCanvasDesc: string;
+      color: string;
+      colorful: string;
+      speed: string;
+      reverse: string;
+      reactiveHint: string;
+      activeBadge: string;
+      /** Firmware mode number → name. */
+      modes: Record<number, string>;
+    };
   };
   canvas: {
     title: string;

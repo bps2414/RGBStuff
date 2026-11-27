@@ -142,6 +142,18 @@ pub enum DriverError {
     ServiceUnavailable(String),
 }
 
+/// A firmware animation the device runs on its own (see `KeyboardHwEffect`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HardwareEffect {
+    pub mode: u8,
+    pub color: Rgb,
+    pub colorful: bool,
+    pub speed: u8,
+    pub reverse: bool,
+    /// Output brightness in percent `0..=100` (global × profile × device).
+    pub brightness_pct: u8,
+}
+
 pub trait RgbDevice: Send {
     fn id(&self) -> &str;
     fn name(&self) -> &str;
@@ -163,6 +175,11 @@ pub trait RgbDevice: Send {
     /// holding still). Drivers can commit a persistent hardware mode here
     /// instead of on every frame.
     fn settle(&mut self) -> Result<(), DriverError> {
+        Ok(())
+    }
+    /// Hands the lighting over to a firmware animation until the next frame.
+    /// Devices without one ignore it.
+    fn apply_hardware_effect(&mut self, _fx: &HardwareEffect) -> Result<(), DriverError> {
         Ok(())
     }
 }

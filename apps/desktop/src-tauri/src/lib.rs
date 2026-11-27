@@ -1,10 +1,11 @@
 use rgb_automation::{
     AutomationEvent, AutomationWatcher, RunningAppInfo, list_running_windowed_apps,
 };
-use rgb_capture::{AMBILIGHT_H, AMBILIGHT_W, AudioSpectrumSampler, ScreenSampler};
+use rgb_capture::{AMBILIGHT_H, AMBILIGHT_W, AudioSpectrumSampler, CpuLoadSampler, ScreenSampler};
 use rgb_core::{
     AppConfig, AutomationConfig, CloseAction, DevicePlacement, DeviceSnapshot, EffectKind,
-    EffectParams, HubImportReport, Locale, UiPrefs, import_local_hub_presets,
+    EffectParams, HardwareEffect, HubImportReport, KeyboardHwEffect, Locale, UiPrefs,
+    import_local_hub_presets,
 };
 use rgb_drivers::DeviceManager;
 use rgb_engine::{EngineStatus, LightingEngine};
@@ -37,6 +38,8 @@ const DYNAMIC_TICK: Duration = Duration::from_millis(16);
 /// (tray menu, automations, the other window), so the UI never goes stale.
 const STATE_EVENT: &str = "rgb://state";
 const TRAY_ID: &str = "rgbstuff-tray";
+/// The keyboard that can run its own firmware animations.
+const KEYBOARD_ID: &str = "aula-f75-he";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct BootstrapState {
@@ -88,6 +91,9 @@ struct CoreRuntime {
     devices: DeviceManager,
     screen_sampler: ScreenSampler,
     audio_sampler: AudioSpectrumSampler,
+    cpu_sampler: CpuLoadSampler,
+    /// Firmware animation last handed to the keyboard (`None` = it follows the canvas).
+    keyboard_hw_sent: Option<HardwareEffect>,
     preview_channel: Option<Channel<InvokeResponseBody>>,
     last_preview: Instant,
     config_dirty_since: Option<Instant>,
@@ -189,11 +195,35 @@ impl CoreRuntime {
             Vec::new()
         };
 
+        let wants_cpu = eff_cfg.power_on
+            && eff_cfg
+                .active_profile()
+                .is_some_and(|p| p.effect.kind.needs_cpu_load());
+        self.engine.cpu_load = if wants_cpu { self.cpu_sampler.load() } else { 0.0 };
+
         self.engine.render_step(&eff_cfg, screen_arg, &audio_bands);
+
+        // Keyboard on a firmware animation: hand it over once, skip canvas frames.
+        let keyboard_fx = keyboard_hw_target(&eff_cfg);
+        if keyboard_fx.is_none() && self.keyboard_hw_sent.take().is_some() {
+            // Back to the canvas: the next frame must reach the keyboard even if
+            // it matches the last one sent before the animation took over.
+            self.engine.dirty.invalidate(KEYBOARD_ID);
+            self.engine.pacer.clear(KEYBOARD_ID);
+        }
+        if let Some(fx) = keyboard_fx
+            && (force_hardware || self.keyboard_hw_sent != Some(fx))
+        {
+            self.devices.apply_device_hardware_effect(KEYBOARD_ID, fx);
+            self.keyboard_hw_sent = Some(fx);
+        }
 
         let now = Instant::now();
         let mut deferred = false;
         for placement in &eff_cfg.placements {
+            if keyboard_fx.is_some() && placement.device_id == KEYBOARD_ID {
+                continue;
+            }
             // A bus that is still inside its pacing window must not be skipped for good
             // on static effects: keep the engine ticking until every device got the frame.
             if !force_hardware && !self.engine.pacer.should_send(&placement.device_id, now) {
@@ -224,6 +254,30 @@ impl CoreRuntime {
             }
         }
     }
+}
+
+/// The firmware animation the keyboard should run right now, with its final
+/// brightness, or `None` when it follows the canvas (or the lights are off).
+fn keyboard_hw_target(cfg: &AppConfig) -> Option<HardwareEffect> {
+    let profile = cfg.active_profile()?;
+    let fx = profile.keyboard_fx?;
+    if !cfg.power_on || profile.effect.kind == EffectKind::Off {
+        return None;
+    }
+    let device_gain = cfg
+        .placements
+        .iter()
+        .find(|p| p.device_id == KEYBOARD_ID)
+        .map_or(100, |p| p.brightness as u32);
+    let pct = LightingEngine::effective_brightness(cfg) as u32 * device_gain / 100;
+    Some(HardwareEffect {
+        mode: fx.mode,
+        color: fx.color,
+        colorful: fx.colorful,
+        speed: fx.speed,
+        reverse: fx.reverse,
+        brightness_pct: pct.min(100) as u8,
+    })
 }
 
 struct SharedState {
@@ -505,6 +559,24 @@ fn update_effect(
             }
         }
         rt.config.power_on = true;
+    })
+}
+
+/// Sets (or clears, with `None`) the keyboard firmware animation of the active profile.
+#[tauri::command(async)]
+fn update_keyboard_fx(
+    fx: Option<KeyboardHwEffect>,
+    window: WebviewWindow,
+    state: State<'_, SharedState>,
+) -> Result<BootstrapState, String> {
+    state.mutate_and_wake(window.app_handle(), Some(window.label()), |rt| {
+        if let Some(profile) = rt.config.active_profile_mut() {
+            profile.keyboard_fx = fx.map(|mut f| {
+                f.mode = f.mode.clamp(2, 19);
+                f.speed = f.speed.clamp(1, 5);
+                f
+            });
+        }
     })
 }
 
@@ -1209,6 +1281,8 @@ pub fn run() {
         devices,
         screen_sampler: ScreenSampler::new(),
         audio_sampler: AudioSpectrumSampler::new(),
+        cpu_sampler: CpuLoadSampler::new(),
+        keyboard_hw_sent: None,
         preview_channel: None,
         last_preview: Instant::now(),
         config_dirty_since: None,
@@ -1307,6 +1381,7 @@ pub fn run() {
             set_brightness,
             select_profile,
             update_effect,
+            update_keyboard_fx,
             update_placement,
             update_aura_led_counts,
             set_locale,

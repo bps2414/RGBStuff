@@ -1,5 +1,7 @@
 use hidapi::{HidApi, HidDevice};
-use rgb_core::{DeviceKind, DeviceTransport, DriverError, LedPoint, LedZone, Rgb, RgbDevice};
+use rgb_core::{
+    DeviceKind, DeviceTransport, DriverError, HardwareEffect, LedPoint, LedZone, Rgb, RgbDevice,
+};
 
 pub const AULA_VID: u16 = 0x38A6;
 pub const AULA_PID: u16 = 0x2729;
@@ -43,19 +45,34 @@ pub fn build_hfd_packet(
 
 /// Builds the 16-byte `SET_LED_EFFECT` payload for hardware static/off lighting.
 pub fn build_led_effect_payload(mode: u8, primary: Rgb, secondary: Rgb, brightness: u8) -> [u8; 16] {
-    let mut data = [0u8; 16];
-    data[0] = mode;
-    data[1] = primary.r;
-    data[2] = primary.g;
-    data[3] = primary.b;
-    data[4] = 255;
+    let mut data = build_hw_effect_payload(mode, primary, false, brightness, 2, false);
     data[5] = secondary.r;
     data[6] = secondary.g;
     data[7] = secondary.b;
-    data[8] = 0; // colorMode: 0 = fixed RGB
+    data
+}
+
+/// Builds the 16-byte `SET_LED_EFFECT` payload for any firmware mode, laid out as
+/// the vendor hub writes it: `[mode, r, g, b, 255, r2, g2, b2, colorMode,
+/// brightness, speed, direction, effectModeType, 0, 0xAA, 0x55]`.
+pub fn build_hw_effect_payload(
+    mode: u8,
+    color: Rgb,
+    colorful: bool,
+    brightness: u8,
+    speed: u8,
+    reverse: bool,
+) -> [u8; 16] {
+    let mut data = [0u8; 16];
+    data[0] = mode;
+    data[1] = color.r;
+    data[2] = color.g;
+    data[3] = color.b;
+    data[4] = 255;
+    data[8] = colorful as u8; // colorMode: 0 = fixed RGB, 1 = random colors
     data[9] = brightness;
-    data[10] = 2; // speed
-    data[11] = 0; // direction
+    data[10] = speed;
+    data[11] = reverse as u8; // direction
     data[12] = 0; // effectModeType
     data[14] = 0xAA;
     data[15] = 0x55;
@@ -89,6 +106,8 @@ pub struct AulaF75HeDriver {
     last_uniform: Option<Rgb>,
     /// Uniform color streamed live but not yet committed as the hardware effect.
     settle_color: Option<Rgb>,
+    /// A firmware animation owns the LEDs; the next frame must take them back.
+    hw_effect_active: bool,
     status: String,
 }
 
@@ -107,6 +126,7 @@ impl AulaF75HeDriver {
             custom_mode_active: false,
             last_uniform: None,
             settle_color: None,
+            hw_effect_active: false,
             status: "Initializing".into(),
         };
         let _ = drv.reconnect();
@@ -279,6 +299,19 @@ impl RgbDevice for AulaF75HeDriver {
         let first = colors[0];
         let uniform = colors.iter().all(|&c| c == first);
 
+        // Leaving a firmware animation: switch the keyboard back to a plain
+        // static mode first, otherwise the animation keeps drawing over the stream.
+        if self.hw_effect_active {
+            self.hw_effect_active = false;
+            if let Err(e) = self.send_static_or_off(first) {
+                self.device = None;
+                return Err(e);
+            }
+            if uniform {
+                return Ok(());
+            }
+        }
+
         // SET_LED_EFFECT is slow to show (the firmware applies and stores it), so
         // a fade of uniform colors sent that way lagged far behind the other
         // devices. Every changing frame goes through the live RAM stream; a
@@ -311,6 +344,39 @@ impl RgbDevice for AulaF75HeDriver {
             }
             _ => Ok(()),
         }
+    }
+
+    fn apply_hardware_effect(&mut self, fx: &HardwareEffect) -> Result<(), DriverError> {
+        if self.device.is_none() && !self.reconnect() {
+            return Err(DriverError::Disconnected("Aula F75 HE (38A6:2729)".into()));
+        }
+        let brightness =
+            ((fx.brightness_pct.min(100) as u32 * self.max_brightness as u32 + 50) / 100) as u8;
+        let (mode, brightness) = if brightness == 0 {
+            (HFD_MODE_OFF, 0)
+        } else {
+            (fx.mode.clamp(2, 19), brightness)
+        };
+        let payload = build_hw_effect_payload(
+            mode,
+            fx.color,
+            fx.colorful,
+            brightness,
+            fx.speed.clamp(1, 5),
+            fx.reverse,
+        );
+        let res = {
+            let dev = self.device.as_ref().expect("checked above");
+            self.send_chunked(dev, HFD_CMD_SET_LED_EFFECT, &payload, 0)
+        };
+        self.custom_mode_active = false;
+        self.last_uniform = None;
+        self.settle_color = None;
+        self.hw_effect_active = res.is_ok();
+        if res.is_err() {
+            self.device = None;
+        }
+        res
     }
 
     fn reconnect(&mut self) -> bool {

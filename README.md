@@ -43,8 +43,9 @@
 ## Features
 
 **Lighting**
-- 12 effects: solid, gradient, rainbow wave, breathing, dual pulse, starlight, aurora, plasma, ripple, screen ambilight, audio reactive and off.
-- 12 one-click scenes, each a complete look (effect, colors, motion).
+- 25 effects in four groups: classics (solid, gradient, breathing, spectrum cycle, rainbow wave, dual pulse), motion (comet, neon, color cross, rainbow windmill, gathering, color fountain, ripple, plasma), nature (aurora, starlight, snowfall, rain, fire, bloom, mountains) and reactive (screen ambilight, audio, CPU load).
+- 22 one-click scenes, each a complete look (effect, colors, motion): Campfire, Matrix, Cyberpunk, Snowfall and more.
+- **Keyboard built-in effects.** The keyboard can run its own firmware animations per profile (18 of them, including the ones that react to typing), with color, random colors, speed and direction. 0% CPU, no keyboard hook.
 - Profiles (Work, Gaming, Ambilight, Audio, Night, Off) one click away in the sidebar, the tray popover and the tray menu.
 - **Per-device intensity up to 200%.** Above 100% is a boost that lifts dim content up to full LED drive without changing the hue, for fans or RAM that look weaker than the rest.
 - The interface itself glows with the color your LEDs are showing.

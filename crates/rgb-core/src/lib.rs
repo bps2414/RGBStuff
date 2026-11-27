@@ -6,12 +6,12 @@ pub mod hub_importer;
 pub use color::{ColorParseError, Rgb, hsv_to_rgb};
 pub use config::{
     AppConfig, AppProfileRule, AutomationConfig, CURRENT_SCHEMA_VERSION, CloseAction, ConfigError,
-    EffectKind, EffectParams, UiPrefs,
+    EffectKind, EffectParams, KeyboardHwEffect, UiPrefs,
     LightingProfile, Locale,
 };
 pub use device::{
     BatteryDevice, BatteryTelemetry, DeviceCapability, DeviceId, DeviceKind, DevicePlacement,
-    DeviceSnapshot, DeviceTransport, DriverError, LedPoint, LedZone, RgbDevice,
+    DeviceSnapshot, DeviceTransport, DriverError, HardwareEffect, LedPoint, LedZone, RgbDevice,
 };
 pub use hub_importer::{HubImportReport, ImportedHubItem, import_local_hub_presets};
 

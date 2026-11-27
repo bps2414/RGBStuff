@@ -20,6 +20,8 @@ pub struct LightingEngine {
     start_instant: Instant,
     static_applied: bool,
     effect_state: EffectState,
+    /// Latest CPU usage `0..=1`, set by the caller for `CpuLoad`.
+    pub cpu_load: f32,
 }
 
 impl Default for LightingEngine {
@@ -43,6 +45,7 @@ impl LightingEngine {
             start_instant: Instant::now(),
             static_applied: false,
             effect_state: EffectState::new(),
+            cpu_load: 0.0,
         }
     }
 
@@ -111,6 +114,7 @@ impl LightingEngine {
             time_secs: elapsed,
             screen_frame,
             audio_bands,
+            cpu_load: self.cpu_load,
         };
         render_effect(&mut self.canvas, &params, &input, &mut self.effect_state);
 

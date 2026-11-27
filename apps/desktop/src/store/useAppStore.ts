@@ -12,6 +12,7 @@ import {
   apiUpdateAuraLedCounts,
   apiUpdateAutomation,
   apiUpdateEffect,
+  apiUpdateKeyboardFx,
   apiUpdatePlacement,
   apiUpdateUiPrefs,
   onStateChanged,
@@ -20,6 +21,7 @@ import {
   type DevicePlacement,
   type EffectParams,
   type HubImportReport,
+  type KeyboardHwEffect,
   type UiPrefs,
 } from "../lib/tauri";
 import { setLiveAccent } from "../lib/visuals";
@@ -118,6 +120,7 @@ interface AppStore {
   setBrightness: (value: number) => Promise<void>;
   selectProfile: (id: string) => Promise<void>;
   updateEffect: (effect: EffectParams, profileBrightness?: number) => Promise<void>;
+  updateKeyboardFx: (fx: KeyboardHwEffect | null) => Promise<void>;
   updatePlacement: (placement: DevicePlacement) => Promise<void>;
   updateAuraCounts: (counts: [number, number]) => Promise<void>;
   setLocale: (locale: Locale) => Promise<void>;
@@ -136,6 +139,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     applyState,
   );
   const sendPlacement = latestWins(apiUpdatePlacement, applyState);
+  const sendKeyboardFx = latestWins(apiUpdateKeyboardFx, applyState);
   // Night-brightness slider fires per pixel; only the newest value matters.
   const sendAutomation = latestWins(apiUpdateAutomation, applyState);
 
@@ -227,6 +231,24 @@ export const useAppStore = create<AppStore>((set, get) => {
         });
       }
       await sendEffect({ effect, profileBrightness });
+    },
+
+    updateKeyboardFx: async (fx: KeyboardHwEffect | null) => {
+      const prev = get().state;
+      if (prev) {
+        set({
+          state: {
+            ...prev,
+            config: {
+              ...prev.config,
+              profiles: prev.config.profiles.map((p) =>
+                p.id === prev.config.active_profile_id ? { ...p, keyboard_fx: fx } : p,
+              ),
+            },
+          },
+        });
+      }
+      await sendKeyboardFx(fx);
     },
 
     updatePlacement: async (placement: DevicePlacement) => {

@@ -17,11 +17,21 @@ export interface EffectParams {
   scale: number;
 }
 
+/** One of the keyboard's own firmware animations (see `KeyboardHwEffect` in rgb-core). */
+export interface KeyboardHwEffect {
+  mode: number;
+  color: RgbColor;
+  colorful: boolean;
+  speed: number;
+  reverse: boolean;
+}
+
 export interface LightingProfile {
   id: string;
   name: string;
   brightness: number;
   effect: EffectParams;
+  keyboard_fx?: KeyboardHwEffect | null;
 }
 
 export interface DevicePlacement {
@@ -407,6 +417,15 @@ export async function apiUpdateEffect(
     effect,
     profileBrightness: profileBrightness ?? null,
   });
+}
+
+export async function apiUpdateKeyboardFx(fx: KeyboardHwEffect | null): Promise<BootstrapState> {
+  if (!isTauriRuntime()) {
+    const p = devState.config.profiles.find((x) => x.id === devState.config.active_profile_id);
+    if (p) p.keyboard_fx = fx;
+    return structuredClone(devState);
+  }
+  return invoke<BootstrapState>("update_keyboard_fx", { fx });
 }
 
 export async function apiUpdatePlacement(placement: DevicePlacement): Promise<BootstrapState> {

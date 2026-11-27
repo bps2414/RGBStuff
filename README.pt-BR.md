@@ -43,8 +43,9 @@
 ## Recursos
 
 **Iluminação**
-- 12 efeitos: sólido, gradiente, onda arco-íris, respiração, pulso duplo, luz estelar, aurora, plasma, ondulação, ambilight da tela, áudio reativo e apagado.
-- 12 cenas de um clique, cada uma um visual completo (efeito, cores e movimento).
+- 25 efeitos em quatro grupos: clássicos (sólido, gradiente, respiração, ciclo de cores, onda arco-íris, pulso duplo), movimento (cometa, neon, cruz colorida, catavento, convergência, fonte colorida, ondulação, plasma), natureza (aurora, luz estelar, nevasca, chuva, fogo, florescer, montanhas) e reativos (ambilight da tela, áudio, carga da CPU).
+- 22 cenas de um clique, cada uma um visual completo (efeito, cores e movimento): Fogueira, Matrix, Cyberpunk, Nevasca e outras.
+- **Efeitos nativos do teclado.** O teclado pode rodar as animações do próprio firmware por perfil (18, inclusive as que reagem à digitação), com cor, cores aleatórias, velocidade e direção. 0% de CPU, sem hook de teclado.
 - Perfis (Trabalho, Gaming, Ambilight, Áudio, Noturno, Apagar) a um clique na barra lateral, no popover e no menu da bandeja.
 - **Intensidade por dispositivo até 200%.** Acima de 100% vira boost: conteúdo escuro sobe até o máximo do LED sem mudar a cor, para fans ou RAM que parecem mais fracos que o resto.
 - A própria interface brilha com a cor que os seus LEDs estão mostrando.

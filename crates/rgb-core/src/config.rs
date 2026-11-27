@@ -29,6 +29,19 @@ pub enum EffectKind {
     Aurora,
     Plasma,
     Ripple,
+    ColorCycle,
+    Comet,
+    Snowfall,
+    Rain,
+    Fire,
+    Windmill,
+    Gathering,
+    Fountain,
+    Bloom,
+    Mountains,
+    Neon,
+    Cross,
+    CpuLoad,
     Ambilight,
     AudioSpectrum,
 }
@@ -47,6 +60,27 @@ impl EffectKind {
     pub const fn needs_audio_capture(self) -> bool {
         matches!(self, Self::AudioSpectrum)
     }
+
+    pub const fn needs_cpu_load(self) -> bool {
+        matches!(self, Self::CpuLoad)
+    }
+}
+
+/// One of the keyboard's own firmware animations (HFD `SET_LED_EFFECT` modes, as
+/// listed by the vendor hub). While set, the keyboard runs it by itself instead
+/// of taking colors from the canvas, so reactive key effects work without any
+/// keyboard hook and cost no CPU.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeyboardHwEffect {
+    /// Firmware mode `2..=19`.
+    pub mode: u8,
+    pub color: Rgb,
+    /// Random / rainbow colors instead of `color`.
+    pub colorful: bool,
+    /// Firmware speed `1..=5`.
+    pub speed: u8,
+    /// Reverses the direction on modes that have one.
+    pub reverse: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -81,6 +115,9 @@ pub struct LightingProfile {
     pub name: String,
     pub brightness: u8,
     pub effect: EffectParams,
+    /// Keyboard runs a firmware animation instead of following the canvas.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keyboard_fx: Option<KeyboardHwEffect>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -210,6 +247,7 @@ impl Default for AppConfig {
                         angle_deg: 20.0,
                         scale: 100,
                     },
+                    keyboard_fx: None,
                 },
                 LightingProfile {
                     id: "gaming".to_string(),
@@ -223,6 +261,7 @@ impl Default for AppConfig {
                         angle_deg: 35.0,
                         scale: 100,
                     },
+                    keyboard_fx: None,
                 },
                 LightingProfile {
                     id: "ambilight".to_string(),
@@ -236,6 +275,7 @@ impl Default for AppConfig {
                         angle_deg: 0.0,
                         scale: 100,
                     },
+                    keyboard_fx: None,
                 },
                 LightingProfile {
                     id: "audio".to_string(),
@@ -249,6 +289,7 @@ impl Default for AppConfig {
                         angle_deg: 0.0,
                         scale: 100,
                     },
+                    keyboard_fx: None,
                 },
                 LightingProfile {
                     id: "night".to_string(),
@@ -262,6 +303,7 @@ impl Default for AppConfig {
                         angle_deg: 0.0,
                         scale: 100,
                     },
+                    keyboard_fx: None,
                 },
                 LightingProfile {
                     id: "off".to_string(),
@@ -275,6 +317,7 @@ impl Default for AppConfig {
                         angle_deg: 0.0,
                         scale: 100,
                     },
+                    keyboard_fx: None,
                 },
             ],
             placements: vec![
